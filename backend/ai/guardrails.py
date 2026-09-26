@@ -49,8 +49,7 @@ def collect_allowed_numbers(facts: dict) -> set[float]:
             number = abs(float(value))
             allowed.update({number, round(number, 1), round(number, 2), float(round(number))})
         elif isinstance(value, str):
-            for match in NUMBER_PATTERN.findall(value):
-                allowed.add(float(match.replace(",", ".")))
+            allowed.update(_numbers_in(value))
         elif isinstance(value, dict):
             for item in value.values():
                 visit(item)
@@ -98,6 +97,7 @@ def validate_sentence(
     allowed_numbers: set[float],
     required_terms: tuple[str, ...] = (),
     expected_direction: str | None = None,
+    max_length: int = MAX_SENTENCE_LENGTH,
 ) -> list[str]:
     """Return a list of problems; an empty list means the sentence is safe to show."""
     problems = []
@@ -105,7 +105,7 @@ def validate_sentence(
     if not text or not text.strip():
         return ["empty"]
 
-    if len(text) > MAX_SENTENCE_LENGTH:
+    if len(text) > max_length:
         problems.append("too long")
 
     for number in _numbers_in(text):

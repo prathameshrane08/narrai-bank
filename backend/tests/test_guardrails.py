@@ -63,3 +63,8 @@ def test_from_to_comparison_uses_the_to_value():
 
     wrong = "Netto decreased from €37.50 to €42.70."
     assert validate_sentence(wrong, allowed)[0].startswith("wrong direction")
+
+
+def test_numbers_with_thousands_separators_in_facts_are_allowed():
+    allowed = collect_allowed_numbers({"Kept": "€2,424.32"})
+    assert validate_sentence("You kept €2,424.32 this month.", allowed) == []

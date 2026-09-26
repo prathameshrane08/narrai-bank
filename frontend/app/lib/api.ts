@@ -124,6 +124,28 @@ export type Story = {
   ai_available: boolean;
 };
 
+export type ChatPlan = {
+  tool: string;
+  category: string | null;
+  merchant: string | null;
+  month: string;
+  compare_month: string | null;
+  n: number;
+};
+
+export type ChatReply = {
+  question: string;
+  month: string;
+  answer: string;
+  source: "ai" | "template" | "policy";
+  tool: string;
+  plan: ChatPlan | null;
+  facts: Record<string, string | number>;
+  issues: string[];
+  router: "ai" | "keywords" | "policy";
+  suggestions: string[];
+};
+
 async function get<T>(path: string): Promise<T> {
   const response = await fetch(`${API_URL}${path}`);
   if (!response.ok) {
@@ -140,3 +162,17 @@ export const fetchDashboard = (month: string) =>
 
 export const fetchStory = (month: string) =>
   get<Story>(`/api/story?month=${month}`);
+
+export const fetchChatSuggestions = () => get<{ suggestions: string[] }>("/api/chat/suggestions");
+
+export async function askQuestion(question: string, month: string, previous: ChatPlan | null): Promise<ChatReply> {
+  const response = await fetch(`${API_URL}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, month, previous }),
+  });
+  if (!response.ok) {
+    throw new Error(`Chat request failed with status ${response.status}`);
+  }
+  return response.json();
+}

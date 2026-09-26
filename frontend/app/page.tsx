@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { AccountOverview } from "./components/AccountOverview";
 import { AppHeader } from "./components/AppHeader";
+import { ChatAssistant } from "./components/ChatAssistant";
 import { BreakdownChart } from "./components/BreakdownChart";
 import { InsightFeed } from "./components/InsightFeed";
 import { KpiTiles } from "./components/KpiTiles";
@@ -167,6 +168,8 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      <ChatAssistant month={month} />
     </Shell>
   );
 }

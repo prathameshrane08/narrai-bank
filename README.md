@@ -58,6 +58,24 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 | `GET /api/months` | Months that have a previous month to compare with |
 | `GET /api/dashboard?month=YYYY-MM` | Verified facts, account summary, transactions and chart data (fast, no LLM) |
 | `GET /api/story?month=YYYY-MM` | Four-part narrative with per-sentence source |
+| `POST /api/chat` | Answer a customer question from verified numbers |
+| `GET /api/chat/suggestions` | Example questions for the chat UI |
+
+## Ask about my money (chat)
+
+`POST /api/chat {"question", "month", "previous"}` answers questions from verified numbers only:
+
+1. **Policy first** — investment, credit or other regulated advice is declined by code, before any model runs.
+2. **Routing** — clear phrasings ("compare", "biggest payments", "save") route by keyword rules; the LLM
+   decides only ambiguous questions. Categories, merchants and months must appear in the question
+   (or continue the previous question) — the model cannot invent them.
+3. **Calculation** — `analytics/queries.py` computes the answer with pandas (spending, top merchants,
+   comparisons, largest payments, category breakdown, monthly average, income kept, unusual payments).
+4. **Narration** — the LLM phrases the verified result; the guardrails reject unverified numbers,
+   speculation, wrong directions and answers that don't name their topic, falling back to a template.
+
+Every answer returns its source (`ai`, `template` or `policy`) and the facts behind it, shown in the UI
+under "Show the numbers". Evaluate with `python -m evals.run_chat_eval` (30 labelled questions).
 
 ## Narration evaluation
 
