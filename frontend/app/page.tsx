@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { AccountOverview } from "./components/AccountOverview";
 import { AppHeader } from "./components/AppHeader";
@@ -10,6 +10,7 @@ import { BreakdownChart } from "./components/BreakdownChart";
 import { InsightFeed } from "./components/InsightFeed";
 import { KpiTiles } from "./components/KpiTiles";
 import { NextSteps } from "./components/NextSteps";
+import { SignIn } from "./components/SignIn";
 import { ErrorState, LoadingSkeleton } from "./components/StateScreens";
 import { SpendingChart } from "./components/SpendingChart";
 import { StoryCard } from "./components/StoryCard";
@@ -17,8 +18,10 @@ import { TransactionsList } from "./components/TransactionsList";
 import {
   type Budgets,
   type Dashboard,
+  type Session,
   type Story,
   type Tenant,
+  SignedOutError,
   fetchBudgets,
   fetchDashboard,
   fetchMonths,
@@ -26,8 +29,10 @@ import {
   fetchTenant,
   fetchTenants,
   removeBudget,
+  restoreSession,
   saveBudget,
   setTenantId,
+  signOut,
 } from "./lib/api";
 import { formatMonth } from "./lib/format";
 import { applyTenantTheme, tenantFromUrl } from "./lib/theme";
@@ -94,6 +99,9 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   // Bumped by "Try again" to re-run the loaders.
   const [attempt, setAttempt] = useState(0);
+  // undefined = not checked yet; null = signed out.
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
+  const [signInNotice, setSignInNotice] = useState<string | null>(null);
   const [storyAttempt, setStoryAttempt] = useState(0);
 
   const [storyResult, setStoryResult] = useState<Story | null>(null);
@@ -108,6 +116,27 @@ export default function Home() {
   // Drill-down selection: which bar segment the user is exploring.
   const [focus, setFocus] = useState<{ month: string; category: string } | null>(null);
 
+  // Clear everything that belongs to the signed-in customer.
+  const endSession = useCallback((notice: string | null) => {
+    signOut();
+    setSession(null);
+    setSignInNotice(notice);
+    setMonth(null);
+    setMonths([]);
+    setDashboard(null);
+    setBudgets(null);
+    setStoryResult(null);
+    setFocus(null);
+  }, []);
+
+  const handleFailure = useCallback(
+    (err: unknown, message = "The banking service didn't respond. Please try again.") => {
+      if (err instanceof SignedOutError) endSession(err.message);
+      else setError(message);
+    },
+    [endSession],
+  );
+
   // Load the bank's white-label config first, so every later request carries its tenant header.
   useEffect(() => {
     const requested = tenantFromUrl();
@@ -121,17 +150,24 @@ export default function Home() {
       .then((config) => {
         applyTenantTheme(config);
         setTenant(config);
-        return fetchMonths();
-      })
-      .then(({ months, latest }) => {
-        setMonths(months);
-        setMonth(latest);
+        setSession(restoreSession());
       })
       .catch((err) => {
         console.warn("Could not reach the NarrAI API (is the backend running on port 8000?)", err);
         setError("The banking service didn't respond. Please check your connection and try again.");
       });
   }, [attempt]);
+
+  // Once signed in, find which months this customer has data for.
+  useEffect(() => {
+    if (!session) return;
+    fetchMonths()
+      .then(({ months, latest }) => {
+        setMonths(months);
+        setMonth(latest);
+      })
+      .catch((err) => handleFailure(err));
+  }, [session, attempt, handleFailure]);
 
   // Facts load fast; the AI story loads separately so charts never wait for the LLM.
   useEffect(() => {
@@ -144,16 +180,18 @@ export default function Home() {
         setDashboard(data);
         setFocus({ month: data.facts.month, category: data.facts.headline.category });
       })
-      .catch(() => !cancelled && setError("Your account data couldn't be loaded."));
+      .catch((err) => !cancelled && handleFailure(err, "Your account data couldn't be loaded."));
 
     fetchBudgets(month)
       .then((data) => !cancelled && setBudgets(data))
-      .catch(() => !cancelled && setBudgetError("Budgets could not be loaded."));
+      .catch((err) =>
+        !cancelled && (err instanceof SignedOutError ? handleFailure(err) : setBudgetError("Budgets could not be loaded.")),
+      );
 
     return () => {
       cancelled = true;
     };
-  }, [month, attempt]);
+  }, [month, attempt, handleFailure]);
 
   // The story has its own loader so it can be retried without reloading the page.
   useEffect(() => {
@@ -172,6 +210,11 @@ export default function Home() {
     setAttempt((n) => n + 1);
   }
 
+  function onSignedIn(value: Session) {
+    setSignInNotice(null);
+    setSession(value);
+  }
+
   function retryStory() {
     setStoryErrorMonth(null);
     setStoryAttempt((n) => n + 1);
@@ -185,8 +228,9 @@ export default function Home() {
     try {
       setBudgets(await action());
       setDashboard(await fetchDashboard(month));
-    } catch {
-      setBudgetError("That budget change could not be saved. Please try again.");
+    } catch (err) {
+      if (err instanceof SignedOutError) endSession(err.message);
+      else setBudgetError("That budget change could not be saved. Please try again.");
     } finally {
       setBudgetBusy(false);
     }
@@ -200,7 +244,23 @@ export default function Home() {
     );
   }
 
-  if (!dashboard || !month || !focus || !tenant) {
+  if (tenant && session === null) {
+    return (
+      <Shell
+        header={<AppHeader monthPicker={null} bankName={tenant.bank_name} logo={tenant.logo} />}
+        footer={
+          <>
+            <span>{tenant.legal_footer}</span>
+            <BrandSwitcher tenant={tenant} tenants={tenants} />
+          </>
+        }
+      >
+        <SignIn tenant={tenant} notice={signInNotice} onSignedIn={onSignedIn} />
+      </Shell>
+    );
+  }
+
+  if (!dashboard || !month || !focus || !tenant || !session) {
     return (
       <Shell header={tenant && <AppHeader monthPicker={null} bankName={tenant.bank_name} logo={tenant.logo} />}>
         <LoadingSkeleton />
@@ -234,7 +294,15 @@ export default function Home() {
 
   return (
     <Shell
-      header={<AppHeader monthPicker={monthPicker} bankName={tenant.bank_name} logo={tenant.logo} />}
+      header={
+        <AppHeader
+          monthPicker={monthPicker}
+          bankName={tenant.bank_name}
+          logo={tenant.logo}
+          customerName={session.customerName}
+          onSignOut={() => endSession(null)}
+        />
+      }
       footer={
         <>
           <span>{tenant.legal_footer}</span>

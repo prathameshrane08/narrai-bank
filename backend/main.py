@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
 from ai.assistant import SUGGESTIONS, answer_question
@@ -26,6 +27,7 @@ from analytics.spending import (
 import pandas as pd
 
 import warmup
+from auth import InvalidToken, issue_session, verify_session
 from database import make_engine, make_session_factory
 from repository import CustomerRef, Repository
 from tenants import Tenant, get_tenant, load_tenants
@@ -64,8 +66,10 @@ def current_tenant(x_narrai_tenant: str | None = Header(None)) -> Tenant:
     return tenant
 
 
-# Until authentication lands, every request acts as this demo customer of the requesting bank.
-DEMO_CUSTOMER = os.getenv("NARRAI_DEMO_CUSTOMER", "demo-customer")
+# Demo sign-in (pick a seeded demo customer, no bank backend needed) is for pitches only: off by default.
+DEMO_MODE = os.getenv("NARRAI_DEMO_MODE", "0") == "1"
+# The demo customer whose recent stories are pre-written at startup.
+DEMO_CUSTOMER = "demo-customer"
 
 _repository: Repository | None = None
 
@@ -90,16 +94,40 @@ class CustomerContext:
         return self.repo.budgets(self.customer)
 
 
+bearer = HTTPBearer(auto_error=False)
+
+
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(status_code=401, detail=detail, headers={"WWW-Authenticate": "Bearer"})
+
+
+def signed_in_customer(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    x_narrai_tenant: str | None = Header(None),
+    repo: Repository = Depends(repository),
+) -> tuple[Tenant, CustomerRef]:
+    """The bank and customer named in the session token. The bank never comes from a header."""
+    if credentials is None:
+        raise _unauthorized("Sign in required.")
+    try:
+        claims = verify_session(credentials.credentials)
+    except InvalidToken:
+        raise _unauthorized("Your session is invalid or has expired. Please sign in again.") from None
+
+    tenant = get_tenant(claims["tenant"])
+    customer = repo.customer_by_id(claims["tenant"], claims["sub"]) if tenant else None
+    if tenant is None or customer is None:
+        raise _unauthorized("Your session is no longer valid. Please sign in again.")
+    if x_narrai_tenant and x_narrai_tenant != tenant.id:
+        raise HTTPException(status_code=403, detail="This session belongs to a different bank.")
+    return tenant, customer
+
+
 def customer_context(
-    tenant: Tenant = Depends(current_tenant),
+    signed_in: tuple[Tenant, CustomerRef] = Depends(signed_in_customer),
     repo: Repository = Depends(repository),
 ) -> CustomerContext:
-    customer = repo.find_customer(tenant.id, DEMO_CUSTOMER)
-    if customer is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No customer '{DEMO_CUSTOMER}' for {tenant.bank_name}. Run `python -m seed` to load demo data.",
-        )
+    tenant, customer = signed_in
     df = repo.transactions(customer)
     if df.empty:
         raise HTTPException(status_code=404, detail="This customer has no transactions yet.")
@@ -139,8 +167,71 @@ def tenant_config(tenant: Tenant = Depends(current_tenant)):
 
 @app.get("/api/tenants")
 def tenant_list():
-    """Available demo brands (for the pitch demo's brand switcher)."""
+    """Available demo brands for the pitch demo's brand switcher. Hidden outside demo mode:
+    which banks use NarrAI is confidential."""
+    if not DEMO_MODE:
+        return {"tenants": []}
     return {"tenants": [{"id": t.id, "bank_name": t.bank_name} for t in load_tenants().values()]}
+
+
+# ------------------------------------------------------------------ sessions
+
+
+class SessionRequest(BaseModel):
+    customer_ref: str = Field(min_length=1, max_length=80, description="The bank's own id for the customer")
+
+
+def _session_response(customer: CustomerRef) -> dict:
+    token, expires = issue_session(customer.tenant_id, customer.id)
+    return {
+        "token": token,
+        "token_type": "Bearer",
+        "expires_at": expires.isoformat(),
+        "customer": {"ref": customer.external_ref, "name": customer.display_name},
+    }
+
+
+@app.post("/api/sessions")
+def create_session(
+    request: SessionRequest,
+    x_narrai_api_key: str | None = Header(None),
+    repo: Repository = Depends(repository),
+):
+    """Server-to-server: the bank's backend, after signing its customer in, gets a NarrAI session for them."""
+    tenant_id = repo.tenant_for_api_key(x_narrai_api_key) if x_narrai_api_key else None
+    if tenant_id is None:
+        raise HTTPException(status_code=401, detail="A valid bank API key is required (X-NarrAI-API-Key).")
+    customer = repo.find_customer(tenant_id, request.customer_ref)
+    if customer is None:
+        raise HTTPException(status_code=404, detail="No such customer at this bank.")
+    return _session_response(customer)
+
+
+class DemoSessionRequest(BaseModel):
+    customer_ref: str = Field(pattern=r"^demo-[a-z0-9-]{1,60}$")
+
+
+@app.get("/api/demo/customers")
+def demo_customers(tenant: Tenant = Depends(current_tenant), repo: Repository = Depends(repository)):
+    """Demo customers to choose from on the demo sign-in screen (demo mode only)."""
+    if not DEMO_MODE:
+        raise HTTPException(status_code=404, detail="Not found.")
+    return {"customers": [{"ref": c.external_ref, "name": c.display_name} for c in repo.demo_customers(tenant.id)]}
+
+
+@app.post("/api/demo/sessions")
+def create_demo_session(
+    request: DemoSessionRequest,
+    tenant: Tenant = Depends(current_tenant),
+    repo: Repository = Depends(repository),
+):
+    """Demo sign-in without a bank backend. Only in demo mode, and only for seeded demo customers."""
+    if not DEMO_MODE:
+        raise HTTPException(status_code=404, detail="Not found.")
+    customer = repo.find_customer(tenant.id, request.customer_ref)
+    if customer is None:
+        raise HTTPException(status_code=404, detail="No such demo customer.")
+    return _session_response(customer)
 
 
 @app.get("/api/months")

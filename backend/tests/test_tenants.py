@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 import ai.assistant as assistant
+import main
 from main import app
 from tenants import Colours, Tenant, contrast_ratio, load_tenants
 
@@ -31,7 +32,8 @@ def test_logo_must_be_a_local_tenant_asset():
         Tenant.model_validate({**base, "logo": "https://evil.example/logo.svg"})
 
 
-def test_tenant_endpoint_uses_header_and_defaults():
+def test_tenant_endpoint_uses_header_and_defaults(monkeypatch):
+    monkeypatch.setattr(main, "DEMO_MODE", True)  # the bank list is only public in demo mode
     assert client.get("/api/tenant").json()["id"] == "narrai"
     kestrel = client.get("/api/tenant", headers={"X-NarrAI-Tenant": "kestrel"}).json()
     assert kestrel["bank_name"] == "Kestrel Bank"

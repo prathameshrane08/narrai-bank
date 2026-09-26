@@ -14,7 +14,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import sessionmaker
 
 from analytics.spending import prepare_transactions
-from models import Account, Budget, Customer, Transaction
+from auth import hash_api_key, new_api_key
+from models import Account, ApiKey, Budget, Customer, Transaction
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,65 @@ class Repository:
         if customer is None:
             return None
         return CustomerRef(customer.id, customer.tenant_id, customer.external_ref, customer.display_name)
+
+    def customer_by_id(self, tenant_id: str, customer_id: str) -> CustomerRef | None:
+        with self.session_factory() as session:
+            customer = session.get(Customer, customer_id)
+        if customer is None or customer.tenant_id != tenant_id:
+            return None
+        return CustomerRef(customer.id, customer.tenant_id, customer.external_ref, customer.display_name)
+
+    def demo_customers(self, tenant_id: str) -> list[CustomerRef]:
+        with self.session_factory() as session:
+            rows = session.scalars(
+                select(Customer)
+                .where(Customer.tenant_id == tenant_id, Customer.external_ref.like("demo-%"))
+                .order_by(Customer.display_name)
+            ).all()
+        return [CustomerRef(c.id, c.tenant_id, c.external_ref, c.display_name) for c in rows]
+
+    # ------------------------------------------------------------------ bank API keys
+
+    def create_api_key(self, tenant_id: str, name: str) -> tuple[str, str]:
+        """Returns (full key, prefix). The full key is not stored and cannot be shown again."""
+        key, prefix, key_hash = new_api_key()
+        with self.session_factory.begin() as session:
+            session.add(ApiKey(tenant_id=tenant_id, name=name, prefix=prefix, key_hash=key_hash))
+        return key, prefix
+
+    def tenant_for_api_key(self, key: str) -> str | None:
+        """The bank an active key belongs to (and records its use), or None."""
+        with self.session_factory.begin() as session:
+            api_key = session.scalar(
+                select(ApiKey).where(ApiKey.key_hash == hash_api_key(key), ApiKey.revoked_at.is_(None))
+            )
+            if api_key is None:
+                return None
+            api_key.last_used_at = datetime.now(timezone.utc)
+            return api_key.tenant_id
+
+    def list_api_keys(self, tenant_id: str) -> list[dict]:
+        with self.session_factory() as session:
+            keys = session.scalars(
+                select(ApiKey).where(ApiKey.tenant_id == tenant_id).order_by(ApiKey.created_at)
+            ).all()
+        return [
+            {"prefix": k.prefix, "name": k.name, "created_at": k.created_at, "last_used_at": k.last_used_at,
+             "revoked": k.revoked_at is not None}
+            for k in keys
+        ]
+
+    def revoke_api_key(self, tenant_id: str, prefix: str) -> bool:
+        with self.session_factory.begin() as session:
+            api_key = session.scalar(
+                select(ApiKey).where(
+                    ApiKey.tenant_id == tenant_id, ApiKey.prefix == prefix, ApiKey.revoked_at.is_(None)
+                )
+            )
+            if api_key is None:
+                return False
+            api_key.revoked_at = datetime.now(timezone.utc)
+            return True
 
     # ------------------------------------------------------------------ money
 

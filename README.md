@@ -68,7 +68,7 @@ pip install -r backend/requirements-dev.txt
 cd backend
 alembic upgrade head      # create/upgrade the database (SQLite file by default)
 python -m seed            # demo customers for every bank (safe to re-run)
-uvicorn main:app --reload --port 8000
+NARRAI_DEMO_MODE=1 uvicorn main:app --reload --port 8000   # demo sign-in on
 
 # frontend (second terminal)
 cd frontend && npm install && npm run dev
@@ -81,7 +81,9 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | `sqlite:///backend/data/narrai-dev.db` | Postgres in production, e.g. `postgresql+psycopg://user:pass@host/narrai` |
-| `NARRAI_DEMO_CUSTOMER` | `demo-customer` | Which seeded customer requests act as, until authentication is added (`demo-family`, `demo-student`, `demo-young-professional`) |
+| `NARRAI_TOKEN_SECRET` | dev file `backend/data/.token-secret` | **Required in production**: ≥32 random characters used to sign session tokens |
+| `NARRAI_SESSION_MINUTES` | `30` | Session token lifetime |
+| `NARRAI_DEMO_MODE` | `0` | `1` enables the demo sign-in screen (seeded `demo-*` customers only) and the demo brand list |
 | `NARRAI_SEED_DEMO` | `0` | Docker only: `1` loads demo customers on start (Compose sets it) |
 | `NARRAI_LLM_PROVIDER` | `ollama` | `ollama` (local, data stays on the machine) or `openai_compatible` (vLLM, EU-hosted APIs, Azure OpenAI…) |
 | `NARRAI_MODEL` | `llama3.2:3b` | Model name for the chosen provider |
@@ -101,6 +103,8 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 | `GET /api/months` | Months that have a previous month to compare with |
 | `GET /api/dashboard?month=YYYY-MM` | Verified facts, account summary, transactions and chart data (fast, no LLM) |
 | `GET /api/story?month=YYYY-MM` | Four-part narrative with per-sentence source |
+| `POST /api/sessions` | **Bank backend** (`X-NarrAI-API-Key`) gets a session token for one of its customers |
+| `GET /api/demo/customers`, `POST /api/demo/sessions` | Demo sign-in (only when `NARRAI_DEMO_MODE=1`, only `demo-*` customers) |
 | `POST /api/chat` | Answer a customer question from verified numbers |
 | `GET /api/chat/suggestions` | Example questions for the chat UI |
 
@@ -116,6 +120,32 @@ account label, legal footer, where regulated-advice questions are referred, and 
 - Configs are validated on load: colours must meet **WCAG AA contrast (4.5:1)**, logos must be local
   files, and the file name must match the id — a bank cannot ship an unreadable theme.
 - `GET /api/tenant` returns the requesting bank's config; disabled features return `403`.
+
+## Sign-in and bank API keys
+
+NarrAI never handles customer passwords. The bank signs its customer in, then the bank's **backend**
+asks NarrAI for a short-lived session for that customer:
+
+```
+bank backend ──X-NarrAI-API-Key──► POST /api/sessions {"customer_ref": "<bank's customer id>"}
+                                  ◄── {"token": "...", "expires_at": "..."}   (30 minutes)
+customer app ──Authorization: Bearer <token>──► /api/dashboard, /api/chat, /api/budgets, …
+```
+
+- **The bank comes from the session token**, never from a header a browser could change; a mismatching
+  `X-NarrAI-Tenant` header is refused (403). Tokens are HS256-signed, expire, and are checked for
+  issuer, algorithm and required claims.
+- **API keys** are per bank, shown once, stored only as a SHA-256 hash, identified by prefix:
+  ```bash
+  python -m manage api-key create --bank kestrel --name "Kestrel mobile backend"
+  python -m manage api-key list   --bank kestrel
+  python -m manage api-key revoke --bank kestrel --prefix nk_AbCdEfGh
+  ```
+- **Demo sign-in** (`NARRAI_DEMO_MODE=1`) lets a pitch pick a seeded demo customer without a bank
+  backend. It is off by default, only works for `demo-*` customers, and the list of client banks is only
+  public in demo mode.
+- The stand-alone demo keeps the session in the browser tab (`sessionStorage`). In a bank integration the
+  bank's app provides the session, ideally without exposing it to page scripts.
 
 ## Data model
 

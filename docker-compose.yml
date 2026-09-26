@@ -46,6 +46,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://narrai:${POSTGRES_PASSWORD:-narrai-local-only}@postgres:5432/narrai
       NARRAI_SEED_DEMO: "1" # demo customers for every bank; turn off for real data
+      NARRAI_DEMO_MODE: "1" # demo sign-in screen; must be off for real customers
+      NARRAI_TOKEN_SECRET: ${NARRAI_TOKEN_SECRET:-} # empty = temporary secret per start (demo only)
       OLLAMA_HOST: http://ollama:11434
       NARRAI_MODEL: ${NARRAI_MODEL:-llama3.2:3b}
       NARRAI_FRONTEND_ORIGINS: http://localhost:3000,http://127.0.0.1:3000

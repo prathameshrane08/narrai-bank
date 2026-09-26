@@ -14,7 +14,9 @@ ever making up a number, and that it drops into the bank's own app under the ban
 - [ ] Use a **Chrome profile without extensions**. One extension on the dev machine overrode CSS
       layout classes; a clean profile avoids surprises.
 - [ ] Start with **no budgets** (remove any in the Budgets panel) so you can create one live.
-- [ ] Open http://localhost:3000 at 1440px wide. Have a second tab on `?bank=kestrel`.
+- [ ] Make sure the API runs with `NARRAI_DEMO_MODE=1` (Docker Compose sets it).
+- [ ] Open http://localhost:3000 at 1440px wide and sign in as **Demo Customer**.
+      Have a second tab on `?bank=kestrel`, also signed in.
 - [ ] Close notifications and other apps; the chat answers in ~3–5 seconds on a laptop.
 
 ---
@@ -24,6 +26,9 @@ ever making up a number, and that it drops into the bank's own app under the ban
 > "Banking apps show balances, charts and long transaction lists. Customers still can't answer the
 > simple question: *what happened with my money this month, and what should I do about it?*
 > Generative AI could explain it, but no bank will let a model invent numbers in front of customers."
+
+> If asked about sign-in: "In a live bank the customer is already signed in to the bank's app; the bank's
+> backend asks NarrAI for a 30-minute session with its own API key. NarrAI never sees a password."
 
 ## 2. The story: code calculates, AI narrates (1 min)
 

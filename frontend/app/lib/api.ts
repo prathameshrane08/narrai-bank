@@ -7,6 +7,62 @@ export function setTenantId(id: string) {
   tenantId = id;
 }
 
+// ---------------------------------------------------------------- session
+
+export type Session = { token: string; expiresAt: string; customerName: string };
+
+/** Thrown when the API says the session is missing, invalid or expired (HTTP 401). */
+export class SignedOutError extends Error {}
+
+let session: Session | null = null;
+
+// Per browser tab, per bank. In production the bank's app hands NarrAI the session;
+// this storage exists for the stand-alone demo.
+const storageKey = () => `narrai.session.${tenantId}`;
+
+export function restoreSession(): Session | null {
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(storageKey()) ?? "null") as Session | null;
+    session = stored && new Date(stored.expiresAt) > new Date() ? stored : null;
+  } catch {
+    session = null;
+  }
+  return session;
+}
+
+function storeSession(value: Session | null) {
+  session = value;
+  try {
+    if (value) sessionStorage.setItem(storageKey(), JSON.stringify(value));
+    else sessionStorage.removeItem(storageKey());
+  } catch {
+    // Storage can be unavailable (private mode); the session then lasts until reload.
+  }
+}
+
+export function signOut() {
+  storeSession(null);
+}
+
+function headers(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    "X-NarrAI-Tenant": tenantId,
+    ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
+    ...extra,
+  };
+}
+
+async function parse<T>(response: Response, what: string): Promise<T> {
+  if (response.status === 401) {
+    storeSession(null);
+    throw new SignedOutError("Your session has ended. Please sign in again.");
+  }
+  if (!response.ok) {
+    throw new Error(`${what} failed with status ${response.status}`);
+  }
+  return response.json();
+}
+
 export type Tenant = {
   id: string;
   bank_name: string;
@@ -169,11 +225,7 @@ export type ChatReply = {
 };
 
 async function get<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, { headers: { "X-NarrAI-Tenant": tenantId } });
-  if (!response.ok) {
-    throw new Error(`Request to ${path} failed with status ${response.status}`);
-  }
-  return response.json();
+  return parse<T>(await fetch(`${API_URL}${path}`, { headers: headers() }), `Request to ${path}`);
 }
 
 export const fetchTenant = () => get<Tenant>("/api/tenant");
@@ -194,13 +246,10 @@ export const fetchChatSuggestions = () => get<{ suggestions: string[] }>("/api/c
 export async function askQuestion(question: string, month: string, previous: ChatPlan | null): Promise<ChatReply> {
   const response = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-NarrAI-Tenant": tenantId },
+    headers: headers({ "Content-Type": "application/json" }),
     body: JSON.stringify({ question, month, previous }),
   });
-  if (!response.ok) {
-    throw new Error(`Chat request failed with status ${response.status}`);
-  }
-  return response.json();
+  return parse<ChatReply>(response, "Chat request");
 }
 
 export type BudgetProgress = {
@@ -225,13 +274,10 @@ export type Budgets = {
 async function send<T>(method: "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     method,
-    headers: { "Content-Type": "application/json", "X-NarrAI-Tenant": tenantId },
+    headers: headers({ "Content-Type": "application/json" }),
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (!response.ok) {
-    throw new Error(`${method} ${path} failed with status ${response.status}`);
-  }
-  return response.json();
+  return parse<T>(response, `${method} ${path}`);
 }
 
 export const fetchBudgets = (month: string) => get<Budgets>(`/api/budgets?month=${month}`);
@@ -241,3 +287,29 @@ export const saveBudget = (category: string, amount: number, month: string) =>
 
 export const removeBudget = (category: string, month: string) =>
   send<Budgets>("DELETE", `/api/budgets/${encodeURIComponent(category)}?month=${month}`);
+
+// ---------------------------------------------------------------- demo sign-in
+
+export type DemoCustomer = { ref: string; name: string };
+
+/** Demo customers offered by the API in demo mode; null when demo sign-in is switched off. */
+export async function fetchDemoCustomers(): Promise<DemoCustomer[] | null> {
+  const response = await fetch(`${API_URL}/api/demo/customers`, { headers: headers() });
+  if (response.status === 404) return null;
+  return (await parse<{ customers: DemoCustomer[] }>(response, "Demo customers")).customers;
+}
+
+export async function demoSignIn(ref: string): Promise<Session> {
+  const response = await fetch(`${API_URL}/api/demo/sessions`, {
+    method: "POST",
+    headers: headers({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ customer_ref: ref }),
+  });
+  const body = await parse<{ token: string; expires_at: string; customer: { name: string } }>(
+    response,
+    "Demo sign-in",
+  );
+  const value = { token: body.token, expiresAt: body.expires_at, customerName: body.customer.name };
+  storeSession(value);
+  return value;
+}

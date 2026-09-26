@@ -6,6 +6,7 @@ os.environ.setdefault("NARRAI_WARMUP", "0")  # never call the real model from te
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import Header
 from sqlalchemy import delete, text
 
 import main
@@ -59,3 +60,24 @@ def isolated_repository(repo):
     main.app.dependency_overrides[main.repository] = lambda: repo
     yield repo
     main.app.dependency_overrides.pop(main.repository, None)
+
+
+@pytest.fixture(autouse=True)
+def signed_in_as_demo_customer(isolated_repository):
+    """Feature tests act as the demo customer of the bank they name (X-NarrAI-Tenant, default narrai).
+    Authentication itself is tested without this shortcut in test_auth.py (see `real_auth`)."""
+    from tenants import get_tenant
+
+    def demo_sign_in(x_narrai_tenant: str | None = Header(None)):
+        tenant = get_tenant(x_narrai_tenant or "narrai")
+        return tenant, isolated_repository.find_customer(tenant.id, "demo-customer")
+
+    main.app.dependency_overrides[main.signed_in_customer] = demo_sign_in
+    yield
+    main.app.dependency_overrides.pop(main.signed_in_customer, None)
+
+
+@pytest.fixture
+def real_auth():
+    """Remove the demo shortcut so a test goes through real session tokens."""
+    main.app.dependency_overrides.pop(main.signed_in_customer, None)

@@ -9,14 +9,27 @@ const NAV = [
   { href: "#transactions", label: "Transactions" },
 ];
 
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter((word) => /^\p{L}/u.test(word))
+    .map((word) => word[0].toUpperCase())
+    .slice(0, 2)
+    .join("");
+}
+
 export function AppHeader({
   monthPicker,
   bankName,
   logo,
+  customerName,
+  onSignOut,
 }: {
   monthPicker: ReactNode;
   bankName?: string;
   logo?: string;
+  customerName?: string;
+  onSignOut?: () => void;
 }) {
   return (
     <header className="sticky top-0 z-20 bg-brand text-on-brand shadow-sm">
@@ -40,14 +53,26 @@ export function AppHeader({
 
         <div className="ml-auto flex items-center gap-4">
           {monthPicker}
-          <span className="max-sm:[display:none]">
-            <span
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-on-brand/15 text-sm font-medium"
-              title="Demo customer"
-            >
-              DC
+          {customerName && (
+            <span className="max-sm:[display:none]">
+              <span
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-on-brand/15 text-sm font-medium"
+                title={`Signed in as ${customerName}`}
+                aria-label={`Signed in as ${customerName}`}
+              >
+                {initials(customerName)}
+              </span>
             </span>
-          </span>
+          )}
+          {onSignOut && (
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="rounded-sm px-2 py-1.5 text-sm text-on-brand/80 hover:bg-on-brand/10 hover:text-on-brand"
+            >
+              Sign out
+            </button>
+          )}
         </div>
       </div>
     </header>
