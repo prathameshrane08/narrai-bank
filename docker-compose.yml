@@ -1,0 +1,59 @@
+# One command: `docker compose up --build`, then open http://localhost:3000
+#
+# Services: Ollama (local LLM) -> model download (first run only) -> API -> web app.
+# On a Mac, Ollama inside Docker runs on CPU only; for GPU speed use the native
+# Ollama app instead:  docker compose -f docker-compose.yml -f docker-compose.host-ollama.yml up --build
+name: narrai
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ollama-pull:
+    # Downloads the model into the shared volume once; later runs finish instantly.
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "${NARRAI_MODEL:-llama3.2:3b}"]
+    restart: "no"
+
+  backend:
+    build: ./backend
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      NARRAI_MODEL: ${NARRAI_MODEL:-llama3.2:3b}
+      NARRAI_FRONTEND_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+    volumes:
+      - narrai-data:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # The browser calls the API directly, so this is the host-facing URL.
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_TENANT: ${NARRAI_TENANT:-narrai}
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  ollama-models:
+  narrai-data:

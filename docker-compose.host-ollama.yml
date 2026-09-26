@@ -1,0 +1,9 @@
+# Use the Ollama app running on the host (GPU-accelerated on Apple Silicon) instead of the container.
+#   docker compose -f docker-compose.yml -f docker-compose.host-ollama.yml up --build backend frontend
+services:
+  backend:
+    environment:
+      OLLAMA_HOST: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: !reset []

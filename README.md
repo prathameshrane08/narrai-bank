@@ -21,14 +21,39 @@ transactions.csv → pandas analytics → verified facts → Llama 3.2 (Ollama) 
   language, or a missing key entity. Rejected sentences, and every sentence when Ollama is offline,
   fall back to deterministic templates. The UI badges each sentence as **AI · verified** or **From facts**.
 
-## Run it
+## Run it with Docker (one command)
+
+Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine with Compose v2.24+).
+
+```bash
+docker compose up --build
+```
+
+Then open http://localhost:3000. The first start downloads the Llama 3.2 3B model (~2 GB) into a Docker
+volume; later starts reuse it. Budgets are kept in the `narrai-data` volume.
+
+- **Mac:** Ollama inside Docker runs on the CPU only. For GPU speed, install the native
+  [Ollama app](https://ollama.com), run `ollama pull llama3.2:3b`, and start only the app containers:
+  `docker compose -f docker-compose.yml -f docker-compose.host-ollama.yml up --build backend frontend`
+- **Another bank's branding:** `NARRAI_TENANT=kestrel docker compose up --build`
+- **Another model:** `NARRAI_MODEL=llama3.1:8b docker compose up --build`
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request:
+backend tests (Python 3.13), frontend lint + type check + production build (Node 24), and a build of
+both Docker images. Dependabot (`.github/dependabot.yml`) opens weekly update PRs for Python, npm,
+Docker base images and GitHub Actions. LLM evaluations are not part of CI because they need a model;
+run them locally (see below).
+
+## Run it without Docker
 
 Prerequisites: Python 3.11+, Node 20+, [Ollama](https://ollama.com) with `ollama pull llama3.2:3b`.
 
 ```bash
 # backend (from the repo root)
 python -m venv venv && source venv/bin/activate
-pip install -r backend/requirements.txt
+pip install -r backend/requirements-dev.txt
 cd backend && uvicorn main:app --reload --port 8000
 
 # frontend (second terminal)
