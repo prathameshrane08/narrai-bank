@@ -7,6 +7,17 @@ An AI-powered banking dashboard that turns transactions into a short, verified s
 3. **What does it mean?** — "100.0% of your restaurant spending happened on weekends."
 4. **What can I do next?** — budgets, merchant savings, weekend patterns, unusual-payment alerts.
 
+| Story with verified AI sentences | Chat answer with its calculation |
+|---|---|
+| ![Overview](docs/screenshots/01-overview.jpg) | ![Chat](docs/screenshots/05-chat-verified-answer.jpg) |
+| **Insight feed** | **Budgets** |
+| ![Insight feed](docs/screenshots/02-insight-feed.jpg) | ![Budgets](docs/screenshots/04-budgets.jpg) |
+| **White-label: Kestrel Bank (fictional)** | **White-label: Aurelia Privatbank (fictional)** |
+| ![Kestrel](docs/screenshots/06-white-label-kestrel.jpg) | ![Aurelia](docs/screenshots/07-white-label-aurelia.jpg) |
+
+**For a pitch:** [demo script](docs/demo-script.md) · [evaluation report](docs/evaluation-report.md) ·
+[all screenshots](docs/screenshots/)
+
 ## Code calculates. AI narrates.
 
 ```

@@ -68,3 +68,16 @@ def test_from_to_comparison_uses_the_to_value():
 def test_numbers_with_thousands_separators_in_facts_are_allowed():
     allowed = collect_allowed_numbers({"Kept": "€2,424.32"})
     assert validate_sentence("You kept €2,424.32 this month.", allowed) == []
+
+
+def test_transaction_count_must_match_its_month(sample_facts):
+    from ai.storyteller import assemble_story
+
+    p = sample_facts["patterns"]  # 4 restaurant payments in August, 2 in July
+    swapped = {"meaning": f"You had {p['transactions_previous']} Restaurant transactions this month."}
+    right = {"meaning": f"You had {p['transactions_current']} Restaurant transactions this month."}
+
+    assert assemble_story(sample_facts, swapped, True)["sections"]["meaning"]["issues"] == [
+        "wrong month for transaction count"
+    ]
+    assert assemble_story(sample_facts, right, True)["sections"]["meaning"]["source"] == "ai"

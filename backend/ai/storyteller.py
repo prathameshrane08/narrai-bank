@@ -9,6 +9,7 @@ the same facts.
 import hashlib
 import json
 import logging
+import re
 
 from ai.guardrails import collect_allowed_numbers, validate_sentence
 from ai.providers import get_provider
@@ -180,6 +181,21 @@ def _cache_key(facts: dict) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
+# Allows a couple of words in between, e.g. "3 Restaurant transactions this month".
+TRANSACTION_COUNT_PATTERN = re.compile(
+    r"(\d+)\s+(?:[A-Za-z'&]+\s+){0,2}transactions?\s+(this|last)\s+month", re.IGNORECASE
+)
+
+
+def _transaction_counts_ok(text: str, facts: dict) -> bool:
+    """'N transactions this/last month' must use that month's count, not the other month's."""
+    counts = {
+        "this": facts["patterns"]["transactions_current"],
+        "last": facts["patterns"]["transactions_previous"],
+    }
+    return all(int(n) == counts[when.lower()] for n, when in TRANSACTION_COUNT_PATTERN.findall(text))
+
+
 def assemble_story(facts: dict, draft: dict, ai_available: bool) -> dict:
     """Keep each AI sentence that passes the guardrails; replace the rest with templates."""
     fallback = template_story(facts)
@@ -193,6 +209,8 @@ def assemble_story(facts: dict, draft: dict, ai_available: bool) -> dict:
         # The headline sentence must move in the same direction as the verified change.
         direction = facts["headline"]["direction"] if name == "what_happened" else None
         issues = validate_sentence(text, allowed, required[name], direction) if text else ["not generated"]
+        if text and not _transaction_counts_ok(text, facts):
+            issues.append("wrong month for transaction count")
 
         if issues:
             if ai_available:
