@@ -75,6 +75,7 @@ app = FastAPI(
         {"name": "Bank integration", "description": "Server-to-server, authenticated with the bank's API key."},
         {"name": "Customer app", "description": "Called by the customer's app with a session token."},
         {"name": "Public", "description": "No credentials: health, readiness and white-label branding."},
+        {"name": "Web app server", "description": "Called only by the white-label web app's server (client secret)."},
         {"name": "Demo", "description": "Only when NARRAI_DEMO_MODE=1; never enable for real customers."},
     ],
 )
@@ -587,6 +588,53 @@ async def upload_statement(
     return summary
 
 
+# ------------------------------------------------------------------ white-label app launch
+
+
+class LaunchRequest(BaseModel):
+    customer_ref: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._:-]{1,80}$")
+
+
+@app.post("/api/launch-codes")
+def create_launch_code(body: LaunchRequest, request: Request, bank: BankCaller = Depends(bank_from_api_key),
+                       repo: Repository = Depends(repository)):
+    """Bank backend: open the white-label web app for a customer it has signed in. Open `launch_url` in the
+    customer's browser or web view within 60 seconds; the code works once."""
+    tenant = get_tenant(bank.tenant_id)
+    if not tenant or not tenant.app_url:
+        raise HTTPException(status_code=409, detail="No web app URL is configured for this bank.")
+    limiter.check("session", bank.key_prefix)
+    customer = _bank_customer(bank, body.customer_ref, repo)
+    code, expires = repo.create_launch_code(customer)
+    audit(request, repo, bank.tenant_id, ("bank", bank.key_prefix), "launch.created", customer)
+    return {"launch_url": f"{tenant.app_url}/launch?code={code}", "expires_at": expires.isoformat()}
+
+
+class LaunchExchange(BaseModel):
+    code: str = Field(min_length=20, max_length=100)
+
+
+@app.post("/api/launch-codes/exchange")
+def exchange_launch_code(body: LaunchExchange, request: Request,
+                         x_narrai_client_secret: str | None = Header(None), repo: Repository = Depends(repository)):
+    """Web app server only: swap a launch code for a session. Needs the web app's client secret, so an
+    intercepted code is useless to anyone else (like an OAuth confidential client)."""
+    expected = os.getenv("NARRAI_WEBAPP_SECRET")
+    if not expected:
+        raise HTTPException(status_code=404, detail="Not found.")
+    if not hmac.compare_digest((x_narrai_client_secret or "").encode(), expected.encode()):
+        _auth_failed(request, "invalid web app client secret")
+        raise HTTPException(status_code=401, detail="Unknown client.")
+    limiter.check("session", client_key(request))
+    customer = repo.redeem_launch_code(body.code)
+    if customer is None:
+        _auth_failed(request, "invalid or used launch code")
+        raise HTTPException(status_code=401, detail="This link has expired or was already used. "
+                                                    "Please open it again from your banking app.")
+    audit(request, repo, customer.tenant_id, ("customer", customer.id), "session.created", customer, via="launch")
+    return {**_session_response(customer), "tenant": customer.tenant_id}
+
+
 def _bank_customer(bank: BankCaller, customer_ref: str, repo: Repository) -> CustomerRef:
     customer = repo.find_customer(bank.tenant_id, customer_ref)
     if customer is None:
@@ -661,12 +709,14 @@ def _json(value) -> str:
 
 from fastapi.routing import APIRoute  # noqa: E402
 
-BANK_ROUTES = ("/api/sessions", "/api/customers", "/api/audit")
+BANK_ROUTES = ("/api/sessions", "/api/customers", "/api/audit", "/api/launch-codes")
 PUBLIC_ROUTES = ("/", "/api/health", "/api/ready", "/api/tenant", "/api/tenants", "/api/chat/suggestions")
 for _route in app.routes:
     if isinstance(_route, APIRoute) and not _route.tags:
         if _route.path.startswith("/api/demo"):
             _route.tags = ["Demo"]
+        elif _route.path == "/api/launch-codes/exchange":
+            _route.tags = ["Web app server"]
         elif _route.path in PUBLIC_ROUTES:
             _route.tags = ["Public"]
         elif _route.path.startswith(BANK_ROUTES) and _route.path != "/api/sessions/current/revoke":

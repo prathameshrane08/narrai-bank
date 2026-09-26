@@ -51,6 +51,26 @@ volume; later starts reuse it. Budgets are kept in the `narrai-data` volume.
 - **Another bank's branding:** `NARRAI_TENANT=kestrel docker compose up --build`
 - **Another model:** `NARRAI_MODEL=llama3.1:8b docker compose up --build`
 
+## Deploying the web app on Vercel
+
+The Next.js app (`frontend/`) deploys to Vercel as is; its server parts (`/launch`, `/bff/*`, `proxy.ts`) run
+as stateless functions. The Python API, Postgres and the model run elsewhere (Vercel can't host the model).
+
+1. Import the repository in Vercel with **Root Directory `frontend`** (Next.js is detected automatically).
+2. `frontend/vercel.json` pins functions to **Frankfurt (`fra1`)** so customer sessions are handled in the EU.
+3. Set environment variables (Production and Preview):
+
+   | Variable | Value |
+   |---|---|
+   | `NEXT_PUBLIC_API_URL` | Public HTTPS URL of the NarrAI API |
+   | `NARRAI_API_URL` | Same, or a private URL the functions can reach |
+   | `NARRAI_WEBAPP_SECRET` | The same random secret the API has |
+   | `NEXT_PUBLIC_TENANT` | The bank's tenant id (one Vercel project per bank, or a custom domain per bank) |
+
+4. On the API: add the Vercel domain (and the bank's custom domain) to `NARRAI_FRONTEND_ORIGINS`, set the bank's
+   `app_url` in its tenant config to that domain, and keep `NARRAI_DEMO_MODE=0` for real customers.
+5. Add the bank's custom domain in Vercel (e.g. `insights.bank.de`) so the session cookie is first-party.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:
@@ -70,7 +90,11 @@ pip install -r backend/requirements-dev.txt
 cd backend
 alembic upgrade head      # create/upgrade the database (SQLite file by default)
 python -m seed            # demo customers for every bank (safe to re-run)
+export NARRAI_WEBAPP_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 NARRAI_DEMO_MODE=1 uvicorn main:app --reload --port 8000   # demo sign-in on
+
+# frontend: give the web app's server the same secret (frontend/.env.local is git-ignored)
+printf 'NARRAI_API_URL=http://127.0.0.1:8000\nNARRAI_WEBAPP_SECRET=%s\n' "$NARRAI_WEBAPP_SECRET" > ../frontend/.env.local
 
 # frontend (second terminal)
 cd frontend && npm install && npm run dev
@@ -101,7 +125,9 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 | `NARRAI_OLLAMA_KEEP_ALIVE` | `30m` | How long Ollama keeps the model loaded between requests (avoids ~60s cold starts) |
 | `NARRAI_WARMUP` | `1` | Load the model and pre-write each bank's latest stories at startup (`0` to disable) |
 | `NARRAI_FRONTEND_ORIGINS` | `http://localhost:3000,...` | CORS origins |
-| `NEXT_PUBLIC_API_URL` | `http://127.0.0.1:8000` | API URL used by the frontend |
+| `NEXT_PUBLIC_API_URL` | `http://127.0.0.1:8000` | API URL the browser uses for public calls (branding) |
+| `NARRAI_API_URL` (web app server) | `NEXT_PUBLIC_API_URL` | API URL the web app's server uses for customer data |
+| `NARRAI_WEBAPP_SECRET` (API **and** web app server) | – | Shared secret for launch-code exchange (≥32 random characters); required for the web app's sign-in |
 
 ## API
 
@@ -112,6 +138,8 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 | `GET /api/months` | Months that have a previous month to compare with |
 | `GET /api/dashboard?month=YYYY-MM` | Verified facts, account summary, transactions and chart data (fast, no LLM) |
 | `GET /api/story?month=YYYY-MM` | Four-part narrative with per-sentence source |
+| `POST /api/launch-codes` | **Bank backend**: one-time link that opens the white-label web app for a signed-in customer |
+| `POST /api/launch-codes/exchange` | **Web app server only** (`X-NarrAI-Client-Secret`): swap a launch code for a session |
 | `POST /api/sessions` | **Bank backend** (`X-NarrAI-API-Key`) gets a session token for one of its customers |
 | `POST /api/sessions/current/revoke` | Customer signs out: the token stops working immediately |
 | `POST /api/customers/{ref}/sessions/revoke-all` | **Bank**: sign a customer out everywhere |
@@ -158,8 +186,10 @@ customer app ──Authorization: Bearer <token>──► /api/dashboard, /api/c
 - **Demo sign-in** (`NARRAI_DEMO_MODE=1`) lets a pitch pick a seeded demo customer without a bank
   backend. It is off by default, only works for `demo-*` customers, and the list of client banks is only
   public in demo mode.
-- The stand-alone demo keeps the session in the browser tab (`sessionStorage`). In a bank integration the
-  bank's app provides the session, ideally without exposing it to page scripts.
+- **The white-label web app never exposes the session to page scripts.** Banks open it with a one-time
+  launch code (`POST /api/launch-codes` → `launch_url`, valid 60 s, single use); the web app's server exchanges
+  it using `NARRAI_WEBAPP_SECRET`, keeps the session in an httpOnly cookie and forwards only customer endpoints
+  (`frontend/app/bff/`). The demo sign-in uses the same cookie. See the integration guide §5a.
 
 ## Importing bank statements
 

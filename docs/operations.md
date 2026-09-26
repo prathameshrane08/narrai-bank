@@ -10,11 +10,11 @@ is hosted in the bank. Covers what to watch, what the alerts mean, and what to d
 | API (`backend/`) | Stateless apart from the in-memory story cache and rate-limit counters. Run ≥2 replicas behind a load balancer in production; rate limits then need a shared store (see [Rate limiting](#rate-limiting)). |
 | Database | Postgres 15+. The API runs `alembic upgrade head` on start (Docker entrypoint). Back up daily; test restores. |
 | Model | Ollama with `llama3.2:3b` by default, or any OpenAI-compatible endpoint. Optional for availability: without it NarrAI serves verified template sentences. |
-| Web app (`frontend/`) | Only needed for the stand-alone white-label app; banks embedding NarrAI in their own app call the API directly. |
+| Web app (`frontend/`) | The white-label app. Deployed on **Vercel** (region `fra1`, see README), or as the Docker image. Its server exchanges launch codes and holds sessions in httpOnly cookies; set `NARRAI_API_URL` and `NARRAI_WEBAPP_SECRET`. Banks that build their own app call the API directly. |
 
 Required settings in production: `DATABASE_URL`, `NARRAI_TOKEN_SECRET` (≥32 random characters, from a
-secret manager), `NARRAI_FRONTEND_ORIGINS`, `NARRAI_HTTPS=1`, `NARRAI_METRICS_TOKEN`, and
-`NARRAI_DEMO_MODE` left at `0`.
+secret manager), `NARRAI_WEBAPP_SECRET` (the same value on the API and the web app), `NARRAI_FRONTEND_ORIGINS`,
+`NARRAI_HTTPS=1`, `NARRAI_METRICS_TOKEN`, and `NARRAI_DEMO_MODE` left at `0`.
 
 ## Health checks
 
@@ -126,6 +126,7 @@ reverse proxy set `NARRAI_TRUST_PROXY=1` so limits use the real client address.
 | Rotate a key | create the new key, let the bank switch, then `python -m manage api-key revoke --bank <id> --prefix <nk_…>` |
 | Audit trail | `python -m manage audit --bank <id> [--customer <ref>]` or `GET /api/audit` with the bank's key |
 | Retention | `python -m manage purge --bank <id> --months 24` (monthly; agree the period with the bank's DPO) |
+| Rotate the web app secret | set a new `NARRAI_WEBAPP_SECRET` on the API and the web app together; existing sessions keep working, only new launches need the new value |
 | Rotate the session secret | change `NARRAI_TOKEN_SECRET`; all sessions end (customers sign in again via their bank app) |
 | Update the API spec | `python -m manage openapi` (CI fails if `docs/openapi.json` is out of date) |
 | Re-evaluate the model | `python -m evals.run_eval …` and `python -m evals.run_chat_eval` after any model or prompt change |

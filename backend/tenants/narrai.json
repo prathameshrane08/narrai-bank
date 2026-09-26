@@ -4,8 +4,13 @@
   "assistant_name": "NarrAI",
   "tagline": "Your money, explained as a story.",
   "logo": "/tenants/narrai.svg",
-  "colours": { "brand": "#0018a8", "brand_dark": "#00106e", "brand_soft": "#e8ebfa" },
+  "colours": {
+    "brand": "#0018a8",
+    "brand_dark": "#00106e",
+    "brand_soft": "#e8ebfa"
+  },
   "account_label": "Current account",
   "legal_footer": "NarrAI Bank prototype · Demo data only, not a real bank account. Figures are calculated by code; the AI only narrates them.",
-  "advice_contact": "a licensed adviser at your bank"
+  "advice_contact": "a licensed adviser at your bank",
+  "app_url": "http://localhost:3000"
 }

@@ -61,8 +61,8 @@ export function SignIn({
 
         {customers === null && (
           <p className="mt-4 text-sm leading-6 text-ink-2">
-            Customers sign in through {tenant.bank_name}&apos;s own app, which opens this page with a secure
-            session. {tenant.assistant_name} never sees your password.
+            Please open {tenant.assistant_name} from {tenant.bank_name}&apos;s banking app; it signs you in securely.
+            {tenant.assistant_name} never sees your password.
           </p>
         )}
 

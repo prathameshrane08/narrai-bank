@@ -48,6 +48,8 @@ services:
       NARRAI_SEED_DEMO: "1" # demo customers for every bank; turn off for real data
       NARRAI_DEMO_MODE: "1" # demo sign-in screen; must be off for real customers
       NARRAI_TOKEN_SECRET: ${NARRAI_TOKEN_SECRET:-} # empty = temporary secret per start (demo only)
+      # Shared with the web app's server for launch-code exchange. Local demo default; set your own anywhere else.
+      NARRAI_WEBAPP_SECRET: ${NARRAI_WEBAPP_SECRET:-local-compose-demo-only-change-me-0123456789}
       OLLAMA_HOST: http://ollama:11434
       NARRAI_MODEL: ${NARRAI_MODEL:-llama3.2:3b}
       NARRAI_FRONTEND_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
@@ -66,6 +68,10 @@ services:
         # The browser calls the API directly, so this is the host-facing URL.
         NEXT_PUBLIC_API_URL: http://localhost:8000
         NEXT_PUBLIC_TENANT: ${NARRAI_TENANT:-narrai}
+    environment:
+      # The web app's server calls the API inside the Docker network; the browser never does for customer data.
+      NARRAI_API_URL: http://backend:8000
+      NARRAI_WEBAPP_SECRET: ${NARRAI_WEBAPP_SECRET:-local-compose-demo-only-change-me-0123456789}
     ports:
       - "3000:3000"
     depends_on:

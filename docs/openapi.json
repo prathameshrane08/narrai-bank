@@ -1042,6 +1042,122 @@
         }
       }
     },
+    "/api/launch-codes": {
+      "post": {
+        "tags": [
+          "Bank integration"
+        ],
+        "summary": "Create Launch Code",
+        "description": "Bank backend: open the white-label web app for a customer it has signed in. Open `launch_url` in the\ncustomer's browser or web view within 60 seconds; the code works once.",
+        "operationId": "create_launch_code_api_launch_codes_post",
+        "parameters": [
+          {
+            "name": "x-narrai-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Narrai-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaunchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/launch-codes/exchange": {
+      "post": {
+        "tags": [
+          "Web app server"
+        ],
+        "summary": "Exchange Launch Code",
+        "description": "Web app server only: swap a launch code for a session. Needs the web app's client secret, so an\nintercepted code is useless to anyone else (like an OAuth confidential client).",
+        "operationId": "exchange_launch_code_api_launch_codes_exchange_post",
+        "parameters": [
+          {
+            "name": "x-narrai-client-secret",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Narrai-Client-Secret"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LaunchExchange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/customers/{customer_ref}/sessions/revoke-all": {
       "post": {
         "tags": [
@@ -1374,6 +1490,37 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "LaunchExchange": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 20,
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "LaunchExchange"
+      },
+      "LaunchRequest": {
+        "properties": {
+          "customer_ref": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._:-]{1,80}$",
+            "title": "Customer Ref"
+          }
+        },
+        "type": "object",
+        "required": [
+          "customer_ref"
+        ],
+        "title": "LaunchRequest"
+      },
       "SessionRequest": {
         "properties": {
           "customer_ref": {
@@ -1450,6 +1597,10 @@
     {
       "name": "Public",
       "description": "No credentials: health, readiness and white-label branding."
+    },
+    {
+      "name": "Web app server",
+      "description": "Called only by the white-label web app's server (client secret)."
     },
     {
       "name": "Demo",

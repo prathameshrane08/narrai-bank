@@ -7,16 +7,19 @@ is enforced in one place and tested in one place.
 
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+import hashlib
+import secrets
+
 import pandas as pd
-from sqlalchemy import delete, func, insert, select
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.orm import sessionmaker
 
 from analytics.spending import prepare_transactions
 from auth import hash_api_key, new_api_key
-from models import Account, ApiKey, AuditEvent, Budget, Customer, RevokedSession, Transaction
+from models import Account, ApiKey, AuditEvent, Budget, Customer, LaunchCode, RevokedSession, Transaction
 
 
 @dataclass(frozen=True)
@@ -31,6 +34,10 @@ class CustomerRef:
 def _ref(customer: Customer) -> CustomerRef:
     return CustomerRef(customer.id, customer.tenant_id, customer.external_ref, customer.display_name,
                        customer.session_generation or 0)
+
+
+def _hash(secret: str) -> str:
+    return hashlib.sha256(secret.encode()).hexdigest()
 
 
 def _aware(moment: datetime | None) -> datetime | None:
@@ -92,6 +99,38 @@ class Repository:
             if owner is None or owner.tenant_id != customer.tenant_id:
                 raise PermissionError("customer does not belong to this tenant")
             owner.session_generation = (owner.session_generation or 0) + 1
+
+    # ------------------------------------------------------------------ launch codes (white-label app)
+
+    def create_launch_code(self, customer: CustomerRef, ttl_seconds: int = 60) -> tuple[str, datetime]:
+        """A one-time code to open the web app for this customer. Returns (code, expires_at)."""
+        code = secrets.token_urlsafe(32)
+        expires = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+        with self.session_factory.begin() as session:
+            owner = session.get(Customer, customer.id)
+            if owner is None or owner.tenant_id != customer.tenant_id:
+                raise PermissionError("customer does not belong to this tenant")
+            session.add(LaunchCode(code_hash=_hash(code), tenant_id=customer.tenant_id,
+                                   customer_id=customer.id, expires_at=expires))
+        return code, expires
+
+    def redeem_launch_code(self, code: str) -> CustomerRef | None:
+        """The customer a valid, unused, unexpired code was issued for; the code is spent either way."""
+        now = datetime.now(timezone.utc)
+        with self.session_factory.begin() as session:
+            # One conditional UPDATE: of two concurrent redemptions of the same code, only one matches.
+            spent = session.execute(
+                update(LaunchCode)
+                .where(LaunchCode.code_hash == _hash(code), LaunchCode.used_at.is_(None), LaunchCode.expires_at > now)
+                .values(used_at=now)
+                .returning(LaunchCode.customer_id, LaunchCode.tenant_id)
+            ).first()
+            if spent is None:
+                return None
+            customer = session.get(Customer, spent.customer_id)
+            if customer is None or customer.tenant_id != spent.tenant_id:
+                return None
+            return _ref(customer)
 
     # ------------------------------------------------------------------ audit log (append-only)
 
@@ -175,6 +214,7 @@ class Repository:
             expired = session.execute(
                 delete(RevokedSession).where(RevokedSession.expires_at < datetime.now(timezone.utc))
             ).rowcount
+            session.execute(delete(LaunchCode).where(LaunchCode.expires_at < datetime.now(timezone.utc)))
         return {"transactions": removed, "expired_revocations": expired}
 
     # ------------------------------------------------------------------ bank API keys

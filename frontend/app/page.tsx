@@ -29,7 +29,7 @@ import {
   fetchTenant,
   fetchTenants,
   removeBudget,
-  restoreSession,
+  fetchSession,
   downloadMyData,
   saveBudget,
   setTenantId,
@@ -39,6 +39,7 @@ import { formatMonth, formatMonthLong } from "./lib/format";
 import { applyTenantTheme, tenantFromUrl } from "./lib/theme";
 
 function BrandSwitcher({ tenant, tenants }: { tenant: Tenant; tenants: { id: string; bank_name: string }[] }) {
+  // A session belongs to one bank, so switching the demo brand signs out first.
   if (tenants.length < 2) return null;
   return (
     <label className="flex items-center gap-2">
@@ -46,7 +47,10 @@ function BrandSwitcher({ tenant, tenants }: { tenant: Tenant; tenants: { id: str
       <select
         value={tenant.id}
         onChange={(event) => {
-          window.location.search = `?bank=${event.target.value}`;
+          const target = event.target.value;
+          void signOut().then(() => {
+            window.location.search = `?bank=${target}`;
+          });
         }}
         className="rounded-sm border border-border bg-surface px-2 py-1 text-ink"
       >
@@ -140,25 +144,32 @@ export default function Home() {
     [endSession],
   );
 
-  // Load the bank's white-label config first, so every later request carries its tenant header.
+  // A signed-in customer's bank decides the branding; otherwise ?bank= (demo) or the default.
   useEffect(() => {
-    const requested = tenantFromUrl();
-    if (requested) setTenantId(requested);
+    async function load() {
+      const current = await fetchSession();
+      const requested = tenantFromUrl();
+      setTenantId(current?.tenant ?? requested ?? process.env.NEXT_PUBLIC_TENANT ?? "narrai");
 
-    fetchTenants()
-      .then((data) => setTenants(data.tenants))
-      .catch(() => setTenants([]));
+      fetchTenants()
+        .then((data) => setTenants(data.tenants))
+        .catch(() => setTenants([]));
 
-    fetchTenant()
-      .then((config) => {
-        applyTenantTheme(config);
-        setTenant(config);
-        setSession(restoreSession());
-      })
-      .catch((err) => {
-        console.warn("Could not reach the NarrAI API (is the backend running on port 8000?)", err);
-        setError("The banking service didn't respond. Please check your connection and try again.");
-      });
+      const config = await fetchTenant();
+      applyTenantTheme(config);
+      setTenant(config);
+      setSession(current);
+      const launch = new URLSearchParams(window.location.search).get("launch");
+      if (!current && launch) {
+        setSignInNotice(
+          `This link has expired or was already used. Please open ${config.assistant_name} again from your banking app.`,
+        );
+      }
+    }
+    load().catch((err) => {
+      console.warn("Could not reach the NarrAI API (is the backend running on port 8000?)", err);
+      setError("The banking service didn't respond. Please check your connection and try again.");
+    });
   }, [attempt]);
 
   // Once signed in, find which months this customer has data for.

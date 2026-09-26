@@ -147,3 +147,19 @@ class AuditEvent(Base):
     customer_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class LaunchCode(Base):
+    """One-time code a bank creates to open the white-label web app for a signed-in customer.
+
+    Stored only as a hash; valid for seconds; usable once (`used_at`), like an OAuth authorization code.
+    """
+
+    __tablename__ = "launch_codes"
+
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(40), index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

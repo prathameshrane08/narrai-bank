@@ -8,6 +8,7 @@ The tenant is selected per request with the X-NarrAI-Tenant header.
 """
 
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -61,6 +62,17 @@ class Tenant(BaseModel):
     legal_footer: str = Field(max_length=400)
     advice_contact: str = Field(description="Where customers are sent for regulated advice")
     features: dict[str, bool] = Field(default_factory=lambda: {"story": True, "chat": True, "insights": True})
+    # Where this bank's white-label web app runs (ideally a subdomain of the bank, e.g. https://insights.bank.de).
+    app_url: str | None = None
+
+    @field_validator("app_url")
+    @classmethod
+    def safe_app_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not re.fullmatch(r"https://[a-z0-9.-]+(:\d+)?|http://(localhost|127\.0\.0\.1)(:\d+)?", value):
+            raise ValueError("app_url must be an https origin (or http://localhost for development)")
+        return value
 
     @field_validator("logo")
     @classmethod

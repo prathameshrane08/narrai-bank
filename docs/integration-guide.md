@@ -36,6 +36,7 @@ This guide is for the bank's developers. The machine-readable API specification 
 | 1 | NarrAI | Create the bank's white-label config (`backend/tenants/<bank>.json`): display name, assistant name, logo, colours (validated for WCAG AA contrast), account label, legal footer, where regulated-advice questions are referred, feature flags (`story`, `chat`, `insights`) |
 | 2 | NarrAI | Issue an API key: `python -m manage api-key create --bank <bank> --name "<system>"`. It is shown once; transfer it through the bank's secret manager, never email |
 | 3 | Bank | Store the key server-side only. Never ship it to a browser or mobile app |
+| NarrAI | For the white-label web app: set the bank's `app_url` (e.g. `https://insights.bank.de`) and deploy the web app there (§5a) |
 | 4 | Bank | Allow-list the NarrAI API host in outbound firewalls; send the web app origin(s) to NarrAI for CORS (`NARRAI_FRONTEND_ORIGINS`) |
 | 5 | Both | Agree data retention (default proposal: 24 months) and the process for access and erasure requests (§8) |
 | 6 | Bank | Provision a test customer, upload a statement, create a session, and call `/api/dashboard` (§4) |
@@ -119,9 +120,44 @@ Call these with the customer's session token. Two ways to use them:
 
 - **Your own app (recommended today):** render NarrAI's data in the bank's app or online banking, using the
   endpoints below. Everything is supported.
-- **NarrAI's white-label web app:** the ready-made app in your brand. Today it supports the demo sign-in only;
-  a production hand-over of the bank's session into the web app (e.g. a one-time code exchanged server-side) is
-  the next integration step and is not built yet.
+- **NarrAI's white-label web app:** the ready-made app in your brand, opened from your app with a one-time
+  launch code (§5a). No customer-app code needed on your side.
+
+### 5a. Launching the white-label web app
+
+Two steps on the bank's side, one server call and one URL to open:
+
+```bash
+# 1. Bank backend, after the customer has signed in to the bank's app:
+curl -X POST "$API/api/launch-codes" -H "X-NarrAI-API-Key: $KEY" \
+     -H 'Content-Type: application/json' -d '{"customer_ref": "c-1042"}'
+# {"launch_url": "https://insights.bank.de/launch?code=4GNC…", "expires_at": "…"}
+
+# 2. The bank app opens launch_url (browser tab or in-app web view) within 60 seconds.
+```
+
+What happens next:
+
+```
+bank app ──opens──► https://insights.bank.de/launch?code=…
+                      web app server ──code + client secret──► POST /api/launch-codes/exchange
+                                     ◄── session (30 min)
+                      sets an httpOnly, Secure, SameSite=Lax cookie, redirects to "/" (code leaves the URL)
+browser  ──same-site calls──► web app server ──Authorization: Bearer──► NarrAI API
+```
+
+- **The code works once and for 60 seconds**, is stored only as a hash, and can only be exchanged by the web
+  app's server (it must present `NARRAI_WEBAPP_SECRET`), so a leaked link is useless.
+- **The session never reaches page scripts**: it lives in an httpOnly cookie; the web app's server adds it to
+  API calls and only forwards the customer-app endpoints. Writes need an anti-forgery header and a same-origin
+  request.
+- **Sign-out** revokes the session at the API and clears the cookie. When the 30 minutes are over, the
+  customer opens the web app from the bank app again.
+- The web app runs at the bank's `app_url` (white-label config), ideally a subdomain of the bank such as
+  `insights.bank.de`, so customers see the bank's domain and the cookie stays first-party.
+- In an in-app web view, allow cookies for that domain.
+
+### 5b. Customer app endpoints
 
 | Endpoint | Returns |
 |---|---|

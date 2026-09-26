@@ -9,66 +9,22 @@ export function setTenantId(id: string) {
 
 // ---------------------------------------------------------------- session
 
-export type Session = { token: string; expiresAt: string; customerName: string };
+/** Who is signed in. The session token itself stays in an httpOnly cookie the page can't read. */
+export type Session = { tenant: string; customerName: string; expiresAt: string };
 
-/** Thrown when the API says the session is missing, invalid or expired (HTTP 401). */
+/** Thrown when the session is missing, invalid or expired (HTTP 401). */
 export class SignedOutError extends Error {}
 
 /** Thrown when the API asks us to slow down (HTTP 429). */
 export class RateLimitedError extends Error {}
 
-let session: Session | null = null;
-
-// Per browser tab, per bank. In production the bank's app hands NarrAI the session;
-// this storage exists for the stand-alone demo.
-const storageKey = () => `narrai.session.${tenantId}`;
-
-export function restoreSession(): Session | null {
-  try {
-    const stored = JSON.parse(sessionStorage.getItem(storageKey()) ?? "null") as Session | null;
-    session = stored && new Date(stored.expiresAt) > new Date() ? stored : null;
-  } catch {
-    session = null;
-  }
-  return session;
-}
-
-function storeSession(value: Session | null) {
-  session = value;
-  try {
-    if (value) sessionStorage.setItem(storageKey(), JSON.stringify(value));
-    else sessionStorage.removeItem(storageKey());
-  } catch {
-    // Storage can be unavailable (private mode); the session then lasts until reload.
-  }
-}
-
-/** Sign out: revoke the session on the server (best effort), then forget it locally. */
-export async function signOut() {
-  const current = session;
-  storeSession(null);
-  if (!current) return;
-  try {
-    await fetch(`${API_URL}/api/sessions/current/revoke`, {
-      method: "POST",
-      headers: { "X-NarrAI-Tenant": tenantId, Authorization: `Bearer ${current.token}` },
-    });
-  } catch {
-    // Offline: the token still expires on its own within the session lifetime.
-  }
-}
-
-function headers(extra: Record<string, string> = {}): Record<string, string> {
-  return {
-    "X-NarrAI-Tenant": tenantId,
-    ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
-    ...extra,
-  };
-}
+// Customer data goes through the web app's own server (/bff), which adds the session from the cookie.
+const BFF = "/bff";
+// Writes carry this header; the server refuses writes without it (cross-site request forgery protection).
+const WRITE_HEADERS = { "Content-Type": "application/json", "X-NarrAI-CSRF": "1" };
 
 async function parse<T>(response: Response, what: string): Promise<T> {
   if (response.status === 401) {
-    storeSession(null);
     throw new SignedOutError("Your session has ended. Please sign in again.");
   }
   if (response.status === 429) {
@@ -81,6 +37,17 @@ async function parse<T>(response: Response, what: string): Promise<T> {
     throw new Error(`${what} failed with status ${response.status}`);
   }
   return response.json();
+}
+
+/** The current session, or null when signed out. */
+export async function fetchSession(): Promise<Session | null> {
+  const body = await parse<{ signedIn: boolean } & Partial<Session>>(await fetch(`${BFF}/session`), "Session");
+  return body.signedIn ? { tenant: body.tenant!, customerName: body.customerName!, expiresAt: body.expiresAt! } : null;
+}
+
+/** Sign out: the web app server revokes the session at the API and clears the cookie. */
+export async function signOut() {
+  await fetch(`${BFF}/session`, { method: "DELETE", headers: WRITE_HEADERS }).catch(() => undefined);
 }
 
 export type Tenant = {
@@ -247,29 +214,36 @@ export type ChatReply = {
   suggestions: string[];
 };
 
-async function get<T>(path: string): Promise<T> {
-  return parse<T>(await fetch(`${API_URL}${path}`, { headers: headers() }), `Request to ${path}`);
+/** Public, credential-free API calls (branding, demo brand list). */
+async function getPublic<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, { headers: { "X-NarrAI-Tenant": tenantId } });
+  return parse<T>(response, `Request to ${path}`);
 }
 
-export const fetchTenant = () => get<Tenant>("/api/tenant");
+/** Customer data, via the web app server with the session cookie. */
+async function get<T>(path: string): Promise<T> {
+  return parse<T>(await fetch(`${BFF}${path}`), `Request to ${path}`);
+}
 
-export const fetchTenants = () => get<{ tenants: { id: string; bank_name: string }[] }>("/api/tenants");
+export const fetchTenant = () => getPublic<Tenant>("/api/tenant");
+
+export const fetchTenants = () => getPublic<{ tenants: { id: string; bank_name: string }[] }>("/api/tenants");
 
 export const fetchMonths = () =>
-  get<{ months: string[]; comparable: string[]; latest: string }>("/api/months");
+  get<{ months: string[]; comparable: string[]; latest: string }>("/months");
 
 export const fetchDashboard = (month: string) =>
-  get<Dashboard>(`/api/dashboard?month=${month}`);
+  get<Dashboard>(`/dashboard?month=${month}`);
 
 export const fetchStory = (month: string) =>
-  get<Story>(`/api/story?month=${month}`);
+  get<Story>(`/story?month=${month}`);
 
-export const fetchChatSuggestions = () => get<{ suggestions: string[] }>("/api/chat/suggestions");
+export const fetchChatSuggestions = () => get<{ suggestions: string[] }>("/chat/suggestions");
 
 export async function askQuestion(question: string, month: string, previous: ChatPlan | null): Promise<ChatReply> {
-  const response = await fetch(`${API_URL}/api/chat`, {
+  const response = await fetch(`${BFF}/chat`, {
     method: "POST",
-    headers: headers({ "Content-Type": "application/json" }),
+    headers: WRITE_HEADERS,
     body: JSON.stringify({ question, month, previous }),
   });
   return parse<ChatReply>(response, "Chat request");
@@ -295,21 +269,21 @@ export type Budgets = {
 };
 
 async function send<T>(method: "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(`${BFF}${path}`, {
     method,
-    headers: headers({ "Content-Type": "application/json" }),
+    headers: WRITE_HEADERS,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return parse<T>(response, `${method} ${path}`);
 }
 
-export const fetchBudgets = (month: string) => get<Budgets>(`/api/budgets?month=${month}`);
+export const fetchBudgets = (month: string) => get<Budgets>(`/budgets?month=${month}`);
 
 export const saveBudget = (category: string, amount: number, month: string) =>
-  send<Budgets>("PUT", `/api/budgets/${encodeURIComponent(category)}?month=${month}`, { amount });
+  send<Budgets>("PUT", `/budgets/${encodeURIComponent(category)}?month=${month}`, { amount });
 
 export const removeBudget = (category: string, month: string) =>
-  send<Budgets>("DELETE", `/api/budgets/${encodeURIComponent(category)}?month=${month}`);
+  send<Budgets>("DELETE", `/budgets/${encodeURIComponent(category)}?month=${month}`);
 
 // ---------------------------------------------------------------- demo sign-in
 
@@ -317,29 +291,25 @@ export type DemoCustomer = { ref: string; name: string };
 
 /** Demo customers offered by the API in demo mode; null when demo sign-in is switched off. */
 export async function fetchDemoCustomers(): Promise<DemoCustomer[] | null> {
-  const response = await fetch(`${API_URL}/api/demo/customers`, { headers: headers() });
+  const response = await fetch(`${API_URL}/api/demo/customers`, { headers: { "X-NarrAI-Tenant": tenantId } });
   if (response.status === 404) return null;
   return (await parse<{ customers: DemoCustomer[] }>(response, "Demo customers")).customers;
 }
 
+/** Demo sign-in: the web app server creates the session and keeps it in the httpOnly cookie. */
 export async function demoSignIn(ref: string): Promise<Session> {
-  const response = await fetch(`${API_URL}/api/demo/sessions`, {
+  const response = await fetch(`${BFF}/demo`, {
     method: "POST",
-    headers: headers({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ customer_ref: ref }),
+    headers: WRITE_HEADERS,
+    body: JSON.stringify({ tenant: tenantId, customer_ref: ref }),
   });
-  const body = await parse<{ token: string; expires_at: string; customer: { name: string } }>(
-    response,
-    "Demo sign-in",
-  );
-  const value = { token: body.token, expiresAt: body.expires_at, customerName: body.customer.name };
-  storeSession(value);
-  return value;
+  const body = await parse<Session>(response, "Demo sign-in");
+  return { tenant: body.tenant, customerName: body.customerName, expiresAt: body.expiresAt };
 }
 
 /** The signed-in customer's own data (GDPR export), saved as a JSON file. */
 export async function downloadMyData(): Promise<void> {
-  const response = await fetch(`${API_URL}/api/me/export`, { headers: headers() });
+  const response = await fetch(`${BFF}/me/export`);
   if (!response.ok) await parse(response, "Data export");
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement("a");

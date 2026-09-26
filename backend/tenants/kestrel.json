@@ -4,8 +4,13 @@
   "assistant_name": "Kestrel Insights",
   "tagline": "Clear answers about your money.",
   "logo": "/tenants/kestrel.svg",
-  "colours": { "brand": "#0b6e4f", "brand_dark": "#08503a", "brand_soft": "#e3f3ec" },
+  "colours": {
+    "brand": "#0b6e4f",
+    "brand_dark": "#08503a",
+    "brand_soft": "#e3f3ec"
+  },
   "account_label": "Everyday account",
   "legal_footer": "Kestrel Bank is a fictional demo brand. Insights powered by NarrAI: figures are calculated by code; the AI only narrates them.",
-  "advice_contact": "a Kestrel Bank financial adviser in your branch or by phone"
+  "advice_contact": "a Kestrel Bank financial adviser in your branch or by phone",
+  "app_url": "http://localhost:3000"
 }
