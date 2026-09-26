@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Protocol
 
+from observability import record_tokens
+
 
 class LLMProvider(Protocol):
     name: str
@@ -24,6 +26,10 @@ class LLMProvider(Protocol):
 
     def complete_json(self, prompt: str) -> dict:
         """Send one user prompt and return the model's reply parsed as a JSON object."""
+        ...
+
+    def ping(self) -> None:
+        """Raise if the model service can't be reached (cheap; no generation)."""
         ...
 
 
@@ -55,7 +61,13 @@ class OllamaProvider:
             options={"temperature": self.temperature},
             keep_alive=self.keep_alive,
         )
+        record_tokens(response.get("prompt_eval_count"), response.get("eval_count"))
         return _parse_json_object(response["message"]["content"])
+
+    def ping(self) -> None:
+        import ollama
+
+        ollama.Client(host=self.host, timeout=3).list()
 
 
 @dataclass
@@ -77,7 +89,14 @@ class OpenAICompatibleProvider:
             response_format={"type": "json_object"},
             temperature=self.temperature,
         )
+        if response.usage:
+            record_tokens(response.usage.prompt_tokens, response.usage.completion_tokens)
         return _parse_json_object(response.choices[0].message.content or "")
+
+    def ping(self) -> None:
+        from openai import OpenAI
+
+        OpenAI(base_url=self.base_url, api_key=self.api_key, timeout=3).models.list()
 
 
 @lru_cache(maxsize=1)

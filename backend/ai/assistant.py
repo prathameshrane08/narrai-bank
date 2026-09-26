@@ -18,6 +18,7 @@ import pandas as pd
 
 from ai.guardrails import collect_allowed_numbers, validate_sentence
 from ai.providers import get_provider
+from observability import record_narration, track_llm
 from analytics import queries
 from analytics.spending import available_months, spending_only
 
@@ -232,7 +233,8 @@ def _validated_route(raw: dict, question: str, ctx: dict, previous: dict | None 
 def route(question: str, ctx: dict, previous: dict | None = None) -> tuple[dict, str]:
     """Return (validated route, router used: 'ai' | 'keywords')."""
     try:
-        raw = get_provider().complete_json(_router_prompt(question, ctx, previous))
+        with track_llm("chat_route"):
+            raw = get_provider().complete_json(_router_prompt(question, ctx, previous))
         used = "ai"
     except Exception as exc:
         logger.warning("LLM router unavailable, using keywords: %s", exc)
@@ -335,7 +337,8 @@ def answer_question(
 
     text, issues = "", ["not generated"]
     try:
-        draft = get_provider().complete_json(_answer_prompt(question, result)).get("answer")
+        with track_llm("chat_answer"):
+            draft = get_provider().complete_json(_answer_prompt(question, result)).get("answer")
         if isinstance(draft, str) and draft.strip():
             text = draft.strip()
             issues = validate_sentence(text, _allowed_numbers(result), max_length=MAX_ANSWER_LENGTH)
@@ -352,6 +355,7 @@ def answer_question(
         text, source = result["summary"], "template"
     else:
         source = "ai"
+    record_narration("chat", {"answer": {"source": source, "issues": issues}})
 
     return {**base, "answer": text, "source": source, "tool": plan["tool"], "plan": plan,
             "facts": result["facts"], "issues": issues, "router": router}

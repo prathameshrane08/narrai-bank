@@ -44,6 +44,11 @@ class Repository:
     def __init__(self, session_factory: sessionmaker):
         self.session_factory = session_factory
 
+    def ping(self) -> None:
+        """Raise if the database can't be reached."""
+        with self.session_factory() as session:
+            session.execute(select(1))
+
     # ------------------------------------------------------------------ customers
 
     def find_customer(self, tenant_id: str, external_ref: str) -> CustomerRef | None:

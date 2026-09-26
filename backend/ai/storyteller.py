@@ -13,6 +13,7 @@ import re
 
 from ai.guardrails import collect_allowed_numbers, validate_sentence
 from ai.providers import get_provider
+from observability import record_narration, track_llm
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +174,8 @@ def model_name() -> str:
 
 
 def _ask_llm(facts: dict) -> dict:
-    return get_provider().complete_json(build_story_prompt(facts))
+    with track_llm("story"):
+        return get_provider().complete_json(build_story_prompt(facts))
 
 
 def _cache_key(facts: dict) -> str:
@@ -242,6 +244,7 @@ def generate_story(facts: dict, use_cache: bool = True) -> dict:
         draft = {}
 
     story = assemble_story(facts, draft, ai_available)
+    record_narration("story", story["sections"])
 
     # Only cache successful AI runs, so a restarted Ollama gets picked up.
     if ai_available:

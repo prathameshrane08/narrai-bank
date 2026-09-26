@@ -6,6 +6,7 @@
     python -m manage import --bank kestrel --customer c-1042 --file statement.xml [--name "Pilot customer 1"]
     python -m manage purge  --bank kestrel --months 24     # retention: delete older transactions
     python -m manage audit  --bank kestrel [--customer c-1042]
+    python -m manage openapi                               # regenerate docs/openapi.json
 """
 
 import argparse
@@ -17,6 +18,9 @@ from pathlib import Path
 from database import make_engine, make_session_factory
 from repository import Repository
 from tenants import load_tenants
+
+
+OPENAPI_FILE = Path(__file__).resolve().parents[1] / "docs" / "openapi.json"
 
 
 def months_before(start: date, months: int) -> date:
@@ -51,7 +55,15 @@ def main(argv: list[str] | None = None) -> int:
     audit_log.add_argument("--bank", required=True)
     audit_log.add_argument("--customer")
 
+    sub.add_parser("openapi", help="write the API specification to docs/openapi.json")
+
     args = parser.parse_args(argv)
+    if args.group == "openapi":
+        from main import app
+
+        OPENAPI_FILE.write_text(json.dumps(app.openapi(), indent=2, ensure_ascii=False) + "\n")
+        print(f"Wrote {OPENAPI_FILE}")
+        return 0
     if args.bank not in load_tenants():
         print(f"Unknown bank '{args.bank}'. Known: {', '.join(load_tenants())}", file=sys.stderr)
         return 1

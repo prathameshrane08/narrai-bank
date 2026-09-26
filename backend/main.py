@@ -3,10 +3,12 @@
 Transactions -> pandas analytics -> verified facts -> LLM narration -> dashboard.
 """
 
+import hmac
 import json
 import logging
 import os
 import re
+import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -37,11 +39,16 @@ from auth import InvalidToken, issue_session, verify_session
 from importers import MAX_BYTES, StatementError
 from importers.service import import_statement
 from database import make_engine, make_session_factory
+from observability import AUTH_FAILURES, HTTP_LATENCY, HTTP_REQUESTS, IMPORT_ENTRIES, IMPORTS
+from observability import configure_logging, registry
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from ratelimit import client_key, limiter
 from repository import CustomerRef, Repository
 from tenants import Tenant, get_tenant, load_tenants
 
+configure_logging()
 logger = logging.getLogger("narrai.security")
+request_log = logging.getLogger("narrai.request")
 
 FRONTEND_ORIGINS = os.getenv("NARRAI_FRONTEND_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 
@@ -56,9 +63,20 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     lifespan=lifespan,
-    title="NarrAI Bank API",
-    description="AI-powered financial data storytelling. Code calculates, AI narrates.",
-    version="0.3.0",
+    title="NarrAI API",
+    description=(
+        "Verified financial storytelling for banks: code calculates every number, the AI only narrates it.\n\n"
+        "**Bank integration** endpoints are called server-to-server with the bank's `X-NarrAI-API-Key`. "
+        "**Customer app** endpoints need a session token (`Authorization: Bearer …`) that the bank obtains "
+        "from `POST /api/sessions`. See docs/integration-guide.md."
+    ),
+    version="0.4.0",
+    openapi_tags=[
+        {"name": "Bank integration", "description": "Server-to-server, authenticated with the bank's API key."},
+        {"name": "Customer app", "description": "Called by the customer's app with a session token."},
+        {"name": "Public", "description": "No credentials: health, readiness and white-label branding."},
+        {"name": "Demo", "description": "Only when NARRAI_DEMO_MODE=1; never enable for real customers."},
+    ],
 )
 
 app.add_middleware(
@@ -86,7 +104,21 @@ async def security_headers(request: Request, call_next):
     # A request id ties logs and audit events together; accept the bank's own id if it is well-formed.
     incoming = request.headers.get("x-request-id", "")
     request.state.request_id = incoming if REQUEST_ID.match(incoming) else uuid.uuid4().hex
+    started = time.perf_counter()
     response = await call_next(request)
+    duration = time.perf_counter() - started
+
+    # Label by route template ("/api/customers/{customer_ref}"), never the raw path: no customer ids in metrics/logs.
+    route = getattr(request.scope.get("route"), "path", "unmatched")
+    if route != "/metrics":
+        HTTP_REQUESTS.labels(request.method, route, str(response.status_code)).inc()
+        HTTP_LATENCY.labels(route).observe(duration)
+        request_log.info(
+            "request",
+            extra={"request_id": request.state.request_id, "method": request.method, "route": route,
+                   "status": response.status_code, "duration_ms": round(duration * 1000, 1),
+                   "tenant": getattr(request.state, "tenant_id", None)},
+        )
     response.headers.update(SECURITY_HEADERS)
     response.headers["X-Request-ID"] = request.state.request_id
     if request.url.path.startswith("/api/"):
@@ -141,7 +173,8 @@ def _unauthorized(detail: str) -> HTTPException:
 
 def _auth_failed(request: Request, reason: str) -> None:
     """Count failed authentication per client (brute-force protection) and log it without secrets."""
-    logger.warning("auth failure: %s (client=%s, request=%s)", reason, client_key(request), request.state.request_id)
+    AUTH_FAILURES.labels(reason).inc()
+    logger.warning("auth failure: %s", reason, extra={"request_id": request.state.request_id, "event": "auth_failure"})
     limiter.check("auth_failure", client_key(request))
 
 
@@ -171,6 +204,7 @@ def signed_in_customer(
     if x_narrai_tenant and x_narrai_tenant != tenant.id:
         raise HTTPException(status_code=403, detail="This session belongs to a different bank.")
     request.state.session_claims = claims
+    request.state.tenant_id = tenant.id
     return tenant, customer
 
 
@@ -208,6 +242,38 @@ def root():
 def health():
     """Liveness plus warm-up progress (the model and recent stories are prepared at startup)."""
     return {"status": "ok", "model": model_name(), "warmup": warmup.state}
+
+
+@app.get("/api/ready")
+def ready(repo: Repository = Depends(repository)):
+    """Readiness for load balancers: the database must answer. The model is reported, not required:
+    without it NarrAI keeps working on verified template sentences."""
+    from ai.providers import get_provider
+
+    try:
+        repo.ping()
+    except Exception as exc:
+        logger.error("readiness: database unavailable (%s)", type(exc).__name__)
+        return Response(content=json.dumps({"status": "unavailable", "database": "unavailable"}),
+                        status_code=503, media_type="application/json")
+    try:
+        get_provider().ping()
+        llm = "ok"
+    except Exception:
+        llm = "unavailable (verified templates in use)"
+    return {"status": "ready", "database": "ok", "llm": llm}
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics(authorization: str | None = Header(None)):
+    """Prometheus metrics. Off unless NARRAI_METRICS_TOKEN is set; scrapers send it as a bearer token."""
+    expected = os.getenv("NARRAI_METRICS_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=404, detail="Not found.")
+    supplied = (authorization or "").removeprefix("Bearer ").strip()
+    if not hmac.compare_digest(supplied.encode(), expected.encode()):
+        raise HTTPException(status_code=401, detail="Metrics token required.")
+    return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/api/tenant")
@@ -258,6 +324,7 @@ def bank_from_api_key(
     if found is None:
         _auth_failed(request, "invalid bank API key")
         raise HTTPException(status_code=401, detail="A valid bank API key is required (X-NarrAI-API-Key).")
+    request.state.tenant_id = found[0]
     return BankCaller(*found)
 
 
@@ -509,7 +576,12 @@ async def upload_statement(
     try:
         summary = await run_in_threadpool(import_statement, repo, customer, data)
     except StatementError as exc:
+        IMPORTS.labels(bank.tenant_id, "unknown", "rejected").inc()
         raise HTTPException(status_code=422, detail=str(exc)) from None
+    IMPORTS.labels(bank.tenant_id, summary["format"], "ok").inc()
+    IMPORT_ENTRIES.labels(bank.tenant_id, "imported").inc(summary["imported"])
+    IMPORT_ENTRIES.labels(bank.tenant_id, "duplicate").inc(summary["duplicates"])
+    IMPORT_ENTRIES.labels(bank.tenant_id, "skipped").inc(sum(summary["skipped"].values()))
     audit(request, repo, bank.tenant_id, ("bank", bank.key_prefix), "statement.imported", customer,
           format=summary["format"], imported=summary["imported"], duplicates=summary["duplicates"])
     return summary
@@ -583,3 +655,21 @@ def audit_log(customer_ref: str | None = Query(None, pattern=r"^[A-Za-z0-9._:-]{
 
 def _json(value) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+
+
+# ------------------------------------------------------------------ OpenAPI grouping
+
+from fastapi.routing import APIRoute  # noqa: E402
+
+BANK_ROUTES = ("/api/sessions", "/api/customers", "/api/audit")
+PUBLIC_ROUTES = ("/", "/api/health", "/api/ready", "/api/tenant", "/api/tenants", "/api/chat/suggestions")
+for _route in app.routes:
+    if isinstance(_route, APIRoute) and not _route.tags:
+        if _route.path.startswith("/api/demo"):
+            _route.tags = ["Demo"]
+        elif _route.path in PUBLIC_ROUTES:
+            _route.tags = ["Public"]
+        elif _route.path.startswith(BANK_ROUTES) and _route.path != "/api/sessions/current/revoke":
+            _route.tags = ["Bank integration"]
+        else:
+            _route.tags = ["Customer app"]

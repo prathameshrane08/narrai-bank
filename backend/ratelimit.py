@@ -13,6 +13,8 @@ from collections import defaultdict, deque
 
 from fastapi import HTTPException, Request
 
+from observability import RATE_LIMITED
+
 # name -> (requests, per seconds)
 LIMITS = {
     "session": (10, 60),       # creating sessions (bank or demo), per client
@@ -40,6 +42,7 @@ class RateLimiter:
             while hits and hits[0] <= now - window:
                 hits.popleft()
             if len(hits) >= limit:
+                RATE_LIMITED.labels(name).inc()
                 retry_after = max(1, math.ceil(hits[0] + window - now))
                 raise HTTPException(
                     status_code=429,

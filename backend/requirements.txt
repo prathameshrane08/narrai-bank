@@ -8,3 +8,4 @@ alembic>=1.13
 psycopg[binary]>=3.2
 pyjwt>=2.9
 defusedxml>=0.7
+prometheus-client>=0.20

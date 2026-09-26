@@ -1,0 +1,78 @@
+# Prometheus alerting rules for NarrAI. Thresholds are starting points; tune them in a pilot.
+groups:
+  - name: narrai-trust
+    rules:
+      - alert: NarrAIGuardrailRejectionsHigh
+        # More than 10% of AI-written sentences rejected: the model or prompt has drifted.
+        # Customers still only see verified text, but quality and fluency are dropping.
+        expr: |
+          sum(rate(narrai_narration_sentences_total{source="template"}[30m]))
+            / clamp_min(sum(rate(narrai_narration_sentences_total[30m])), 1e-9) > 0.10
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "Over 10% of AI sentences are replaced by verified templates"
+          runbook: "docs/operations.md#guardrail-rejections"
+
+      - alert: NarrAIModelUnavailable
+        expr: sum(rate(narrai_llm_requests_total{outcome="error"}[10m])) / clamp_min(sum(rate(narrai_llm_requests_total[10m])), 1e-9) > 0.5
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Most model calls fail; NarrAI is running on verified templates only"
+          runbook: "docs/operations.md#model-unavailable"
+
+      - alert: NarrAIModelSlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(narrai_llm_duration_seconds_bucket{purpose=~"chat_.*"}[15m]))) > 8
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Chat model calls p95 above 8 seconds"
+          runbook: "docs/operations.md#model-slow"
+
+  - name: narrai-service
+    rules:
+      - alert: NarrAIServerErrors
+        expr: sum(rate(narrai_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(narrai_http_requests_total[5m])), 1e-9) > 0.02
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "More than 2% of API requests fail with 5xx"
+          runbook: "docs/operations.md#server-errors"
+
+      - alert: NarrAIApiSlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(narrai_http_request_duration_seconds_bucket{route!="/api/story",route!="/api/chat"}[10m]))) > 1
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "API p95 above 1 second (excluding model-backed routes)"
+          runbook: "docs/operations.md#api-slow"
+
+  - name: narrai-security
+    rules:
+      - alert: NarrAIAuthFailureSpike
+        # Many rejected keys or tokens: possible credential stuffing or a bank using a revoked key.
+        expr: sum(rate(narrai_auth_failures_total[10m])) * 600 > 100
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 100 rejected credentials in 10 minutes"
+          runbook: "docs/operations.md#auth-failures"
+
+      - alert: NarrAIRateLimitingActive
+        expr: sum by (limit) (rate(narrai_rate_limited_total[10m])) * 600 > 50
+        for: 10m
+        labels: {severity: info}
+        annotations:
+          summary: "Rate limit {{ $labels.limit }} refused over 50 requests in 10 minutes"
+          runbook: "docs/operations.md#rate-limiting"
+
+  - name: narrai-data
+    rules:
+      - alert: NarrAIStatementImportsRejected
+        expr: sum by (tenant) (rate(narrai_statement_imports_total{outcome="rejected"}[1h])) / clamp_min(sum by (tenant) (rate(narrai_statement_imports_total[1h])), 1e-9) > 0.2
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: "Over 20% of {{ $labels.tenant }}'s statement uploads are rejected"
+          runbook: "docs/operations.md#import-rejections"

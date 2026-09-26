@@ -17,6 +17,8 @@ An AI-powered banking dashboard that turns transactions into a short, verified s
 
 **For a pitch:** [demo script](docs/demo-script.md) · [evaluation report](docs/evaluation-report.md) ·
 [all screenshots](docs/screenshots/)
+**For banks and operators:** [integration guide](docs/integration-guide.md) · [API spec](docs/openapi.json) ·
+[operations guide](docs/operations.md) · [alert rules](deploy/prometheus/alerts.yml)
 
 ## Code calculates. AI narrates.
 
@@ -83,6 +85,9 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 | `DATABASE_URL` | `sqlite:///backend/data/narrai-dev.db` | Postgres in production, e.g. `postgresql+psycopg://user:pass@host/narrai` |
 | `NARRAI_TOKEN_SECRET` | dev file `backend/data/.token-secret` | **Required in production**: ≥32 random characters used to sign session tokens |
 | `NARRAI_SESSION_MINUTES` | `30` | Session token lifetime |
+| `NARRAI_LOG_FORMAT` / `NARRAI_LOG_LEVEL` | `json` / `INFO` | Structured JSON logs (`text` for local reading) |
+| `NARRAI_METRICS_TOKEN` | – | Enables `GET /metrics` (Prometheus) for scrapers presenting this bearer token |
+| `NARRAI_LLM_PRICE_IN_PER_1K` / `_OUT_PER_1K` | `0` | EUR per 1,000 tokens, for the hosted-model cost metric |
 | `NARRAI_RATE_LIMITS` | `1` | `0` disables rate limiting (e.g. load tests) |
 | `NARRAI_TRUST_PROXY` | `0` | `1` only behind a trusted reverse proxy: rate-limit by `X-Forwarded-For` |
 | `NARRAI_HTTPS` | `0` | `1` adds `Strict-Transport-Security` (set when served over https) |
@@ -103,6 +108,7 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 | Endpoint | Returns |
 |---|---|
 | `GET /api/health` | Liveness and startup warm-up progress (`idle`, `running`, `ready`, `failed`) |
+| `GET /api/ready` | Readiness: `503` if the database is down; reports whether the model is available |
 | `GET /api/months` | Months that have a previous month to compare with |
 | `GET /api/dashboard?month=YYYY-MM` | Verified facts, account summary, transactions and chart data (fast, no LLM) |
 | `GET /api/story?month=YYYY-MM` | Four-part narrative with per-sentence source |
