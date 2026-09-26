@@ -10,7 +10,8 @@ client = TestClient(app)
 def test_months():
     body = client.get("/api/months").json()
     assert body["latest"] == "2026-08"
-    assert "2026-04" not in body["months"]
+    assert body["months"][0] == "2026-04"  # every month with data…
+    assert "2026-04" not in body["comparable"]  # …but the first has nothing to compare with
 
 
 def test_dashboard_contains_facts_and_chart_data():

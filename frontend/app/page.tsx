@@ -34,7 +34,7 @@ import {
   setTenantId,
   signOut,
 } from "./lib/api";
-import { formatMonth } from "./lib/format";
+import { formatMonth, formatMonthLong } from "./lib/format";
 import { applyTenantTheme, tenantFromUrl } from "./lib/theme";
 
 function BrandSwitcher({ tenant, tenants }: { tenant: Tenant; tenants: { id: string; bank_name: string }[] }) {
@@ -93,6 +93,8 @@ export default function Home() {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [tenants, setTenants] = useState<{ id: string; bank_name: string }[]>([]);
   const [months, setMonths] = useState<string[]>([]);
+  // Months that have a previous month to compare with; only these get a story and insights.
+  const [comparable, setComparable] = useState<string[]>([]);
   const [month, setMonth] = useState<string | null>(null);
 
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
@@ -162,8 +164,9 @@ export default function Home() {
   useEffect(() => {
     if (!session) return;
     fetchMonths()
-      .then(({ months, latest }) => {
+      .then(({ months, comparable, latest }) => {
         setMonths(months);
+        setComparable(comparable);
         setMonth(latest);
       })
       .catch((err) => handleFailure(err));
@@ -178,7 +181,7 @@ export default function Home() {
       .then((data) => {
         if (cancelled) return;
         setDashboard(data);
-        setFocus({ month: data.facts.month, category: data.facts.headline.category });
+        setFocus({ month: data.month, category: data.facts?.headline.category ?? data.categories[0] ?? "" });
       })
       .catch((err) => !cancelled && handleFailure(err, "Your account data couldn't be loaded."));
 
@@ -195,7 +198,7 @@ export default function Home() {
 
   // The story has its own loader so it can be retried without reloading the page.
   useEffect(() => {
-    if (!month || !storyEnabled) return;
+    if (!month || !storyEnabled || !comparable.includes(month)) return;
     let cancelled = false;
     fetchStory(month)
       .then((data) => !cancelled && setStoryResult(data))
@@ -203,7 +206,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [month, storyEnabled, storyAttempt]);
+  }, [month, storyEnabled, storyAttempt, comparable]);
 
   function retry() {
     setError(null);
@@ -269,13 +272,14 @@ export default function Home() {
   }
 
   const { facts } = dashboard;
+  const monthLabel = facts?.month_label ?? formatMonthLong(month);
   // Only show a story (or its error) that belongs to the selected month.
   const story = storyResult?.month === month ? storyResult : null;
   const storyError = storyErrorMonth === month ? "The story could not be generated right now." : null;
   const monthIndex = dashboard.monthly_spending.findIndex((row) => row.month === focus.month);
   const focusPrevious = monthIndex > 0 ? dashboard.monthly_spending[monthIndex - 1].month : null;
 
-  const flagged = new Set(facts.alerts.map((alert) => `${alert.date}|${alert.merchant}`));
+  const flagged = new Set((facts?.alerts ?? []).map((alert) => `${alert.date}|${alert.merchant}`));
 
   const monthPicker = (
     <select
@@ -311,26 +315,32 @@ export default function Home() {
       }
     >
       <p className="text-sm text-ink-3">Financial overview</p>
-      <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-ink">{facts.month_label}</h1>
+      <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-ink">{monthLabel}</h1>
 
       <div className="mt-5 space-y-5">
         <AccountOverview account={dashboard.account} label={tenant.account_label} />
 
-        {tenant.features.story !== false && (
+        {!facts && dashboard.notice && (
+          <p role="status" className="rounded border border-border bg-surface px-5 py-4 text-sm text-ink-2">
+            {dashboard.notice}
+          </p>
+        )}
+
+        {facts && tenant.features.story !== false && (
           <StoryCard
             story={story}
             loading={!story && !storyError}
             error={storyError}
-            monthLabel={facts.month_label}
+            monthLabel={monthLabel}
             assistantName={tenant.assistant_name}
             onRetry={retryStory}
           />
         )}
 
-        {tenant.features.insights !== false && (
+        {facts && tenant.features.insights !== false && (
           <InsightFeed
             insights={dashboard.insights}
-            monthLabel={facts.month_label}
+            monthLabel={monthLabel}
             onExplore={(insight) => {
               if (!insight.category) return;
               setFocus({ month: insight.month, category: insight.category });
@@ -339,14 +349,14 @@ export default function Home() {
           />
         )}
 
-        <KpiTiles facts={facts} />
+        {facts && <KpiTiles facts={facts} />}
 
         <div id="spending" className="grid scroll-mt-24 gap-5 lg:grid-cols-5">
           <div className="lg:col-span-3">
             <SpendingChart
               data={dashboard.monthly_spending}
               categories={dashboard.categories}
-              fixedCategories={facts.fixed_categories}
+              fixedCategories={facts?.fixed_categories ?? []}
               selectedMonth={focus.month}
               selectedCategory={focus.category}
               onSelect={(m, category) => setFocus({ month: m, category })}
@@ -367,7 +377,7 @@ export default function Home() {
         <BudgetsPanel
           data={budgets}
           categories={dashboard.categories}
-          monthLabel={facts.month_label}
+          monthLabel={monthLabel}
           busy={budgetBusy}
           error={budgetError}
           onSave={(category, amount) => changeBudget(() => saveBudget(category, amount, month))}
@@ -375,15 +385,17 @@ export default function Home() {
         />
 
         <div className="grid items-start gap-5 lg:grid-cols-5">
-          <div className="lg:col-span-2">
-            <NextSteps
-              recommendations={facts.recommendations}
-              budgetedCategories={new Set(budgets?.budgets.map((b) => b.category))}
-              onCreateBudget={(category, amount) => changeBudget(() => saveBudget(category, amount, month))}
-            />
-          </div>
-          <div className="lg:col-span-3">
-            <TransactionsList transactions={dashboard.transactions} monthLabel={facts.month_label} flagged={flagged} />
+          {facts && (
+            <div className="lg:col-span-2">
+              <NextSteps
+                recommendations={facts.recommendations}
+                budgetedCategories={new Set(budgets?.budgets.map((b) => b.category))}
+                onCreateBudget={(category, amount) => changeBudget(() => saveBudget(category, amount, month))}
+              />
+            </div>
+          )}
+          <div className={facts ? "lg:col-span-3" : "lg:col-span-5"}>
+            <TransactionsList transactions={dashboard.transactions} monthLabel={monthLabel} flagged={flagged} />
           </div>
         </div>
       </div>

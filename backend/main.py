@@ -7,7 +7,8 @@ import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Path, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
@@ -28,6 +29,8 @@ import pandas as pd
 
 import warmup
 from auth import InvalidToken, issue_session, verify_session
+from importers import MAX_BYTES, StatementError
+from importers.service import import_statement
 from database import make_engine, make_session_factory
 from repository import CustomerRef, Repository
 from tenants import Tenant, get_tenant, load_tenants
@@ -191,16 +194,24 @@ def _session_response(customer: CustomerRef) -> dict:
     }
 
 
-@app.post("/api/sessions")
-def create_session(
-    request: SessionRequest,
+def bank_from_api_key(
     x_narrai_api_key: str | None = Header(None),
     repo: Repository = Depends(repository),
-):
-    """Server-to-server: the bank's backend, after signing its customer in, gets a NarrAI session for them."""
+) -> str:
+    """Server-to-server calls: the bank is identified by its API key."""
     tenant_id = repo.tenant_for_api_key(x_narrai_api_key) if x_narrai_api_key else None
     if tenant_id is None:
         raise HTTPException(status_code=401, detail="A valid bank API key is required (X-NarrAI-API-Key).")
+    return tenant_id
+
+
+@app.post("/api/sessions")
+def create_session(
+    request: SessionRequest,
+    tenant_id: str = Depends(bank_from_api_key),
+    repo: Repository = Depends(repository),
+):
+    """Server-to-server: the bank's backend, after signing its customer in, gets a NarrAI session for them."""
     customer = repo.find_customer(tenant_id, request.customer_ref)
     if customer is None:
         raise HTTPException(status_code=404, detail="No such customer at this bank.")
@@ -234,10 +245,15 @@ def create_demo_session(
     return _session_response(customer)
 
 
+def _all_months(df: pd.DataFrame) -> list[str]:
+    return sorted({str(m) for m in df["month"].unique()})
+
+
 @app.get("/api/months")
 def months(ctx: CustomerContext = Depends(customer_context)):
-    available = comparable_months(ctx.df)
-    return {"months": available, "latest": available[-1] if available else None}
+    """Every month with data, and which of them have a previous month to compare with (story, insights)."""
+    available = _all_months(ctx.df)
+    return {"months": available, "comparable": comparable_months(ctx.df), "latest": available[-1]}
 
 
 @app.get("/api/dashboard")
@@ -245,10 +261,16 @@ def dashboard(
     month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
     ctx: CustomerContext = Depends(customer_context),
 ):
-    """Verified facts plus chart data. Fast: no LLM call."""
+    """Verified facts plus chart data. Fast: no LLM call.
+
+    A month without a previous month (e.g. a newly imported customer) still gets its balance,
+    transactions and charts; `facts` is null because there is nothing to compare yet."""
     df = ctx.df
     budgets = ctx.budgets()
-    facts = _facts_or_404(df, month, budgets)
+    month = month or _all_months(df)[-1]
+    if month not in _all_months(df):
+        raise HTTPException(status_code=404, detail=f"No data for month {month}.")
+    facts = _facts_or_404(df, month, budgets) if month in comparable_months(df) else None
     spending = spending_only(df)
 
     monthly = monthly_spending_by_category(spending)
@@ -258,10 +280,12 @@ def dashboard(
     ]
 
     return {
+        "month": month,
         "facts": facts,
-        "insights": build_insight_feed(df, facts=facts, budgets=budgets),
-        "account": account_summary(df, facts["month"], ctx.repo.opening_balance(ctx.customer)),
-        "transactions": month_transactions(df, facts["month"]),
+        "notice": None if facts else "Stories and comparisons start once there is a previous month to compare with.",
+        "insights": build_insight_feed(df, facts=facts, budgets=budgets) if facts else [],
+        "account": account_summary(df, month, ctx.repo.opening_balance(ctx.customer)),
+        "transactions": month_transactions(df, month),
         "categories": list(monthly.columns),
         "monthly_spending": monthly_spending,
         "merchant_breakdown": merchant_breakdown(spending),
@@ -295,7 +319,7 @@ def chat(request: ChatRequest, ctx: CustomerContext = Depends(customer_context))
     """Answer a question about the customer's money from verified numbers only."""
     require_feature(ctx.tenant, "chat")
     df = ctx.df
-    month = request.month or comparable_months(df)[-1]
+    month = request.month or _all_months(df)[-1]
     if month not in {str(m) for m in df["month"].unique()}:
         raise HTTPException(status_code=404, detail=f"No data for month {month}.")
     return answer_question(
@@ -310,7 +334,7 @@ class BudgetRequest(BaseModel):
 
 def _budget_response(ctx: CustomerContext, month: str | None) -> dict:
     df = ctx.df
-    month = month or comparable_months(df)[-1]
+    month = month or _all_months(df)[-1]
     budgets = ctx.budgets()
     return {
         "month": month,
@@ -350,3 +374,49 @@ def delete_budget(
     if not ctx.repo.delete_budget(ctx.customer, category):
         raise HTTPException(status_code=404, detail=f"No budget for '{category}'.")
     return _budget_response(ctx, month)
+
+
+# ------------------------------------------------------------------ bank data feeds (API key)
+
+CUSTOMER_REF = Path(pattern=r"^[A-Za-z0-9._:-]{1,80}$", description="The bank's own id for the customer")
+
+
+class CustomerProvision(BaseModel):
+    display_name: str = Field(min_length=1, max_length=120)
+
+
+@app.put("/api/customers/{customer_ref}")
+def provision_customer(
+    request: CustomerProvision,
+    customer_ref: str = CUSTOMER_REF,
+    tenant_id: str = Depends(bank_from_api_key),
+    repo: Repository = Depends(repository),
+):
+    """Create a customer if it doesn't exist yet (idempotent)."""
+    customer, created = repo.ensure_customer(tenant_id, customer_ref, request.display_name)
+    return {"ref": customer.external_ref, "created": created}
+
+
+@app.post("/api/customers/{customer_ref}/statements")
+async def upload_statement(
+    request: Request,
+    customer_ref: str = CUSTOMER_REF,
+    tenant_id: str = Depends(bank_from_api_key),
+    repo: Repository = Depends(repository),
+):
+    """Import a camt.053, MT940 or CSV statement (raw request body) for one customer.
+    Re-sending a statement is safe: already-imported entries are recognised and skipped."""
+    declared = int(request.headers.get("content-length") or 0)
+    if declared > MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Statement file is too large.")
+    data = await request.body()
+    if len(data) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Statement file is too large.")
+
+    customer = repo.find_customer(tenant_id, customer_ref)
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Unknown customer; provision it first (PUT /api/customers/{ref}).")
+    try:
+        return await run_in_threadpool(import_statement, repo, customer, data)
+    except StatementError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None

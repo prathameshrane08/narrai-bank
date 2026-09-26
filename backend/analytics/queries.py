@@ -14,7 +14,7 @@ import pandas as pd
 
 from analytics.budgets import budget_progress
 from analytics.insights import build_facts
-from analytics.spending import INCOME_CATEGORY, percentage_change, spending_only
+from analytics.spending import percentage_change, spending_only
 
 
 def _eur(value: float) -> str:
@@ -177,8 +177,8 @@ def monthly_average(df, month: pd.Period, category=None, merchant=None, months=3
 
 def income(df, month: pd.Period, **_):
     rows = df[df["month"] == month]
-    money_in = float(rows.loc[rows["category"] == INCOME_CATEGORY, "amount"].sum())
-    money_out = float(rows.loc[rows["category"] != INCOME_CATEGORY, "amount"].sum())
+    money_in = float(rows.loc[rows["direction"] == "in", "amount"].sum())
+    money_out = float(rows.loc[rows["direction"] == "out", "amount"].sum())
     kept = money_in - money_out
 
     facts = {"Month": _label(month), "Money in": _eur(money_in), "Money out": _eur(money_out)}

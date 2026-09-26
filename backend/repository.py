@@ -5,12 +5,13 @@ query filters on both. Nothing outside this module writes SQL, so tenant isolati
 is enforced in one place and tested in one place.
 """
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 
 import pandas as pd
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import sessionmaker
 
 from analytics.spending import prepare_transactions
@@ -100,12 +101,96 @@ class Repository:
             api_key.revoked_at = datetime.now(timezone.utc)
             return True
 
+    def ensure_customer(self, tenant_id: str, external_ref: str, display_name: str) -> tuple[CustomerRef, bool]:
+        """Create the customer if the bank hasn't provisioned it yet. Returns (customer, created)."""
+        existing = self.find_customer(tenant_id, external_ref)
+        if existing:
+            return existing, False
+        with self.session_factory.begin() as session:
+            customer = Customer(tenant_id=tenant_id, external_ref=external_ref, display_name=display_name)
+            session.add(customer)
+            session.flush()
+            ref = CustomerRef(customer.id, tenant_id, external_ref, display_name)
+        return ref, True
+
+    def import_entries(
+        self,
+        customer: CustomerRef,
+        iban_hash: str | None,
+        iban_masked: str,
+        opening_balance: Decimal | None,
+        rows: list[dict],
+    ) -> tuple[int, int, str]:
+        """Store categorised statement rows on the matching account.
+        Returns (imported, duplicates, masked name of the account actually used)."""
+        with self.session_factory.begin() as session:
+            owner = session.get(Customer, customer.id)
+            if owner is None or owner.tenant_id != customer.tenant_id:
+                raise PermissionError("customer does not belong to this tenant")
+
+            accounts = select(Account).where(Account.tenant_id == customer.tenant_id, Account.customer_id == customer.id)
+            account = None
+            if iban_hash:
+                account = session.scalar(accounts.where(Account.iban_hash == iban_hash))
+            if account is None and not iban_hash:
+                account = session.scalar(accounts.order_by(Account.name))  # CSV exports carry no IBAN
+            if account is None:
+                account = Account(
+                    tenant_id=customer.tenant_id,
+                    customer_id=customer.id,
+                    name="Current account",
+                    iban_masked=iban_masked,
+                    iban_hash=iban_hash,
+                    opening_balance=opening_balance or Decimal("0.00"),
+                )
+                session.add(account)
+                session.flush()
+
+            # 1) Exact re-import of the same file: identical fingerprints.
+            fingerprints = [row["fingerprint"] for row in rows]
+            known = set(
+                session.scalars(
+                    select(Transaction.fingerprint).where(
+                        Transaction.account_id == account.id, Transaction.fingerprint.in_(fingerprints)
+                    )
+                ).all()
+            ) if fingerprints else set()
+
+            # 2) The same booking arriving in another format (camt.053 vs MT940 vs CSV) words the purpose
+            #    differently, so also match on date, amount, direction and category, counting occurrences:
+            #    two identical coffees are only duplicates if the account already has two.
+            existing = Counter()
+            if rows:
+                dates = [row["booked_on"] for row in rows]
+                for booked_on, amount, direction, category in session.execute(
+                    select(Transaction.booked_on, Transaction.amount, Transaction.direction, Transaction.category)
+                    .where(Transaction.account_id == account.id,
+                           Transaction.booked_on >= min(dates), Transaction.booked_on <= max(dates))
+                ):
+                    existing[(booked_on, Decimal(amount), direction, category)] += 1
+
+            new_rows = []
+            for row in rows:
+                key = (row["booked_on"], Decimal(row["amount"]), row["direction"], row["category"])
+                if row["fingerprint"] in known:
+                    existing[key] -= 1  # consumes its own match
+                    continue
+                if existing[key] > 0:
+                    existing[key] -= 1
+                    continue
+                new_rows.append({**row, "tenant_id": customer.tenant_id, "account_id": account.id})
+            if new_rows:
+                session.execute(insert(Transaction), new_rows)
+            account_label = account.iban_masked
+        return len(new_rows), len(rows) - len(new_rows), account_label
+
     # ------------------------------------------------------------------ money
 
     def transactions(self, customer: CustomerRef) -> pd.DataFrame:
         """The customer's transactions in the shape the analytics expect."""
         query = (
-            select(Transaction.booked_on, Transaction.merchant, Transaction.category, Transaction.amount)
+            select(Transaction.booked_on, Transaction.merchant, Transaction.category, Transaction.amount,
+                   Transaction.direction)
             .join(Account, Account.id == Transaction.account_id)
             .where(
                 Transaction.tenant_id == customer.tenant_id,
@@ -117,7 +202,7 @@ class Repository:
         with self.session_factory() as session:
             rows = session.execute(query).all()
 
-        frame = pd.DataFrame(rows, columns=["date", "merchant", "category", "amount"])
+        frame = pd.DataFrame(rows, columns=["date", "merchant", "category", "amount", "direction"])
         frame["amount"] = frame["amount"].astype(float)
         return prepare_transactions(frame)
 

@@ -11,7 +11,7 @@ import pandas as pd
 
 from analytics.budgets import budget_progress
 from analytics.insights import build_facts
-from analytics.spending import INCOME_CATEGORY, spending_only
+from analytics.spending import spending_only
 
 MAX_INSIGHTS = 6
 # A category change is notable when it moves by at least this many euros and this share.
@@ -159,11 +159,11 @@ def _weekend_habits(spending: pd.DataFrame, current: pd.Period, facts: dict) -> 
 
 def _income_kept(df: pd.DataFrame, current: pd.Period, facts: dict) -> list[dict]:
     month_rows = df[df["month"] == current]
-    income = float(month_rows.loc[month_rows["category"] == INCOME_CATEGORY, "amount"].sum())
+    income = float(month_rows.loc[month_rows["direction"] == "in", "amount"].sum())
     if income <= 0:
         return []
 
-    spent = float(month_rows.loc[month_rows["category"] != INCOME_CATEGORY, "amount"].sum())
+    spent = float(month_rows.loc[month_rows["direction"] == "out", "amount"].sum())
     kept = income - spent
     rate = kept / income * 100
 

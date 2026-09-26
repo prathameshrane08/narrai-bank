@@ -77,6 +77,7 @@ def seed_tenant(session: Session, tenant_id: str, reset: bool = False) -> int:
                     "merchant": row.merchant,
                     "category": row.category,
                     "amount": Decimal(str(round(float(row.amount), 2))),
+                    "direction": "in" if row.category == "Income" else "out",
                 }
                 for row in frame.itertuples(index=False)
             ],

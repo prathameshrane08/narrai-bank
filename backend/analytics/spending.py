@@ -8,8 +8,10 @@ from pathlib import Path
 import pandas as pd
 
 REQUIRED_COLUMNS = {"date", "merchant", "category", "amount"}
-# Rows in this category are money coming in; everything else is spending.
+# Amounts are positive; `direction` says which way the money moved ("in" or "out").
 INCOME_CATEGORY = "Income"
+# Money moving between the customer's own accounts: neither spending nor income.
+TRANSFER_CATEGORY = "Transfers"
 
 
 def load_transactions(file_path: str | Path) -> pd.DataFrame:
@@ -25,6 +27,9 @@ def prepare_transactions(df: pd.DataFrame) -> pd.DataFrame:
 
     df["date"] = pd.to_datetime(df["date"])
     df["amount"] = df["amount"].astype(float)
+    if "direction" not in df.columns:
+        # Simple sources (sample CSV, synthetic data) mark money in only by the Income category.
+        df["direction"] = df["category"].map(lambda c: "in" if c == INCOME_CATEGORY else "out")
     df["month"] = df["date"].dt.to_period("M")
     df["is_weekend"] = df["date"].dt.dayofweek >= 5
 
@@ -32,13 +37,14 @@ def prepare_transactions(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def spending_only(df: pd.DataFrame) -> pd.DataFrame:
-    return df[df["category"] != INCOME_CATEGORY]
+    """Money out, excluding transfers to the customer's own accounts."""
+    return df[(df["direction"] == "out") & (df["category"] != TRANSFER_CATEGORY)]
 
 
 def account_summary(df: pd.DataFrame, month: str, opening_balance: float) -> dict:
     """Income, spending and end-of-month balance, from an opening balance before the first transaction."""
     period = pd.Period(month, freq="M")
-    is_income = df["category"] == INCOME_CATEGORY
+    is_income = df["direction"] == "in"
     signed = df["amount"].where(is_income, -df["amount"])
 
     in_month = df["month"] == period
@@ -63,7 +69,7 @@ def month_transactions(df: pd.DataFrame, month: str) -> list[dict]:
             "date": row.date.strftime("%Y-%m-%d"),
             "merchant": row.merchant,
             "category": row.category,
-            "amount": round(row.amount if row.category == INCOME_CATEGORY else -row.amount, 2),
+            "amount": round(row.amount if row.direction == "in" else -row.amount, 2),
         }
         for row in rows.itertuples(index=False)
     ]

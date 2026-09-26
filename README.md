@@ -147,21 +147,63 @@ customer app ──Authorization: Bearer <token>──► /api/dashboard, /api/c
 - The stand-alone demo keeps the session in the browser tab (`sessionStorage`). In a bank integration the
   bank's app provides the session, ideally without exposing it to page scripts.
 
+## Importing bank statements
+
+Banks send statements server-to-server with their API key; the format is detected automatically.
+
+```bash
+# provision a customer (idempotent), then upload a camt.053 / MT940 / CSV file as the request body
+curl -X PUT  $API/api/customers/c-1042 -H "X-NarrAI-API-Key: $KEY" -H 'Content-Type: application/json' -d '{"display_name":"Pilot 1"}'
+curl -X POST $API/api/customers/c-1042/statements -H "X-NarrAI-API-Key: $KEY" --data-binary @statement.xml
+# or from the command line during a pilot
+python -m manage import --bank kestrel --customer c-1042 --file statement.xml --name "Pilot 1"
+```
+
+| Format | What's handled |
+|---|---|
+| **camt.053** (ISO 20022 XML, versions .02–.08) | booked vs pending, reversals, creditor/debtor by direction, structured and unstructured purpose, opening balance. Parsed with `defusedxml`: DTDs, entity bombs and external entities are refused |
+| **MT940** | `:61:`/`:86:` lines, German `?20–?29` purpose and `?32/?33` name sub-fields, reversals (`RC`/`RD`), IBAN computed from bank code + account in `:25:` |
+| **CSV exports** | preamble lines, `;`/`,`, UTF-8 or Windows-1252, `-1.234,56` or `-1,234.56`, Soll/Haben columns, German or English column names, summary rows |
+
+- **Re-imports are safe.** An exact re-upload is recognised by fingerprint; the same booking arriving in another format
+  (worded differently) is recognised by date, amount, direction and category, matched by count so two identical coffees
+  on one day both stay.
+- The **IBAN is stored only masked and as a hash** (to match statements to accounts). Non-EUR entries are skipped and
+  counted for now; files are limited to 5 MB / 50,000 entries.
+- Every response summarises what happened: imported, duplicates, skipped (with reasons), categories and how many lines
+  fell back to "Other".
+
+### Categorisation
+
+`backend/categorisation/` turns `PAYPAL *ZALANDO 1043-2231//BERLIN/DE` into *Zalando · Shopping*: it strips payment
+processors, legal forms, terminal ids, cities and card numbers, then applies ordered keyword rules from
+[`rules.json`](backend/categorisation/rules.json) (editable without code changes). Direction matters:
+
+- money in with salary terms → **Income**; money back from a known shop → **Refunds** (money in, not income);
+- own-account transfers (`Umbuchung`, `Tagesgeld`, credit-card settlement) → **Transfers** (neither spending nor income);
+- cash machine withdrawals → **Cash**; unknown merchants → **Other**, with a cleaned name.
+
+Every result records the rule that decided it (e.g. `rule:KINO`), so a bank can audit and correct it.
+**Accuracy:** 60 / 60 on a labelled set of realistic German statement lines (`tests/test_categorisation.py`). Those
+lines were written alongside the rules, so this shows the rules work as designed, not accuracy on unseen data; a pilot
+should measure it on anonymised real statements.
+
 ## Data model
 
 Postgres in production, SQLite for quick local development; the schema is versioned with Alembic
 (`backend/migrations/`) and applied with `alembic upgrade head` (the Docker image does this on start).
 
 ```
-customers (tenant_id, external_ref) ─┬─ accounts ── transactions (booked_on, merchant, category, amount)
+customers (tenant_id, external_ref) ─┬─ accounts ── transactions (booked_on, merchant, category, amount, direction)
                                       └─ budgets (category, amount)
 ```
 
 - **Every table carries `tenant_id`** (the bank) and every query filters on bank *and* customer; all SQL lives
   in `backend/repository.py`. Writes re-check that the customer belongs to the bank, so a mismatched
   bank/customer pair can neither read nor change another bank's data (covered by tests).
-- Amounts are `NUMERIC(12,2)`, positive, with the `Income` category marking money in; database constraints
-  reject negative amounts and zero or negative budgets.
+- Amounts are `NUMERIC(12,2)` and positive; `direction` (`in`/`out`) says which way money moved, so refunds and
+  transfers from savings are money in without being income. Database constraints reject negative amounts, unknown
+  directions and zero or negative budgets.
 - The test suite builds its database with the real migrations and fails if `models.py` and the migrations
   ever disagree. CI runs it on SQLite and Postgres.
 - `python -m seed` loads the same demo customers for every bank (sample account plus three synthetic personas).

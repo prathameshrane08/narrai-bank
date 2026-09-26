@@ -6,6 +6,11 @@ export function formatMonth(month: string, withYear = true) {
   return withYear ? `${name} ${year}` : name;
 }
 
+export function formatMonthLong(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(year, monthNumber - 1, 1).toLocaleString("en-GB", { month: "long", year: "numeric" });
+}
+
 const euro = new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" });
 
 export function formatEuro(value: number) {

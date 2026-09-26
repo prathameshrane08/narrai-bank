@@ -62,6 +62,8 @@ class Account(Base):
     iban_masked: Mapped[str] = mapped_column(String(40))
     currency: Mapped[str] = mapped_column(String(3), default="EUR")
     opening_balance: Mapped[Decimal] = mapped_column(MONEY, default=Decimal("0.00"))
+    # SHA-256 of the full IBAN, to match statements to accounts without storing the IBAN itself.
+    iban_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 
 class Transaction(Base):
@@ -69,6 +71,8 @@ class Transaction(Base):
     __table_args__ = (
         CheckConstraint("amount >= 0", name="ck_transactions_amount_positive"),
         Index("ix_transactions_tenant_account_date", "tenant_id", "account_id", "booked_on"),
+        Index("uq_transactions_account_fingerprint", "account_id", "fingerprint", unique=True),
+        CheckConstraint("direction IN ('in', 'out')", name="ck_transactions_direction"),
     )
 
     # BIGINT in Postgres; SQLite only auto-increments INTEGER primary keys.
@@ -79,6 +83,12 @@ class Transaction(Base):
     merchant: Mapped[str] = mapped_column(String(200))
     category: Mapped[str] = mapped_column(String(60))
     amount: Mapped[Decimal] = mapped_column(MONEY)
+    # "in" or "out": refunds and transfers from own accounts are money in without being income.
+    direction: Mapped[str] = mapped_column(String(3), default="out", server_default="out")
+    # Remittance information as the bank sent it (kept for re-categorisation and support).
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Identifies an imported row so re-importing the same statement never duplicates it.
+    fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class Budget(Base):

@@ -7,7 +7,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from fastapi import Header
-from sqlalchemy import delete, text
+from sqlalchemy import MetaData, delete
 
 import main
 from analytics.insights import build_facts
@@ -37,9 +37,11 @@ def database_url(tmp_path_factory):
 def repo(database_url):
     """A fresh database built by the real migrations, with demo data for every bank."""
     engine = make_engine(database_url)
-    with engine.begin() as connection:  # start clean (matters when reusing a Postgres test database)
-        for table in ("budgets", "transactions", "accounts", "customers", "alembic_version"):
-            connection.execute(text(f"DROP TABLE IF EXISTS {table}"))
+    # Start clean when reusing a Postgres test database: drop whatever tables exist, including ones
+    # added by newer migrations, so this never needs updating when the schema grows.
+    existing = MetaData()
+    existing.reflect(engine)
+    existing.drop_all(engine)
 
     config = Config(str(BACKEND / "alembic.ini"))
     config.set_main_option("sqlalchemy.url", database_url)

@@ -178,7 +178,10 @@ export type Transaction = {
 };
 
 export type Dashboard = {
-  facts: Facts;
+  month: string;
+  /** Null for a month with no previous month to compare with (e.g. a newly imported customer). */
+  facts: Facts | null;
+  notice: string | null;
   insights: Insight[];
   account: Account;
   transactions: Transaction[];
@@ -233,7 +236,7 @@ export const fetchTenant = () => get<Tenant>("/api/tenant");
 export const fetchTenants = () => get<{ tenants: { id: string; bank_name: string }[] }>("/api/tenants");
 
 export const fetchMonths = () =>
-  get<{ months: string[]; latest: string | null }>("/api/months");
+  get<{ months: string[]; comparable: string[]; latest: string }>("/api/months");
 
 export const fetchDashboard = (month: string) =>
   get<Dashboard>(`/api/dashboard?month=${month}`);
