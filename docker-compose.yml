@@ -6,6 +6,20 @@
 name: narrai
 
 services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: narrai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-narrai-local-only}
+      POSTGRES_DB: narrai
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U narrai -d narrai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   ollama:
     image: ollama/ollama:latest
     volumes:
@@ -30,14 +44,16 @@ services:
   backend:
     build: ./backend
     environment:
+      DATABASE_URL: postgresql+psycopg://narrai:${POSTGRES_PASSWORD:-narrai-local-only}@postgres:5432/narrai
+      NARRAI_SEED_DEMO: "1" # demo customers for every bank; turn off for real data
       OLLAMA_HOST: http://ollama:11434
       NARRAI_MODEL: ${NARRAI_MODEL:-llama3.2:3b}
       NARRAI_FRONTEND_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
-    volumes:
-      - narrai-data:/data
     ports:
       - "8000:8000"
     depends_on:
+      postgres:
+        condition: service_healthy
       ollama-pull:
         condition: service_completed_successfully
 
@@ -55,5 +71,5 @@ services:
         condition: service_healthy
 
 volumes:
+  postgres-data:
   ollama-models:
-  narrai-data:

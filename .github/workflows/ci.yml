@@ -14,13 +14,24 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend tests
+    name: Backend tests (SQLite and Postgres)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
     env:
       NARRAI_WARMUP: "0" # tests never call a real model
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: narrai
+          POSTGRES_PASSWORD: narrai
+          POSTGRES_DB: narrai_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U narrai -d narrai_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,7 +40,12 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements*.txt
       - run: pip install -r requirements-dev.txt
-      - run: python -m pytest -q
+      - name: Tests on SQLite
+        run: python -m pytest -q
+      - name: Tests on Postgres
+        run: python -m pytest -q
+        env:
+          NARRAI_TEST_DATABASE_URL: postgresql+psycopg://narrai:narrai@localhost:5432/narrai_test
 
   frontend:
     name: Frontend lint, types and build

@@ -65,7 +65,10 @@ Prerequisites: Python 3.11+, Node 20+, [Ollama](https://ollama.com) with `ollama
 # backend (from the repo root)
 python -m venv venv && source venv/bin/activate
 pip install -r backend/requirements-dev.txt
-cd backend && uvicorn main:app --reload --port 8000
+cd backend
+alembic upgrade head      # create/upgrade the database (SQLite file by default)
+python -m seed            # demo customers for every bank (safe to re-run)
+uvicorn main:app --reload --port 8000
 
 # frontend (second terminal)
 cd frontend && npm install && npm run dev
@@ -77,8 +80,9 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NARRAI_DATA_FILE` | `backend/data/transactions.csv` | CSV with `date,merchant,category,amount`; rows with category `Income` are money in, all others are spending |
-| `NARRAI_OPENING_BALANCE` | `1840.00` | Demo account balance before the first transaction |
+| `DATABASE_URL` | `sqlite:///backend/data/narrai-dev.db` | Postgres in production, e.g. `postgresql+psycopg://user:pass@host/narrai` |
+| `NARRAI_DEMO_CUSTOMER` | `demo-customer` | Which seeded customer requests act as, until authentication is added (`demo-family`, `demo-student`, `demo-young-professional`) |
+| `NARRAI_SEED_DEMO` | `0` | Docker only: `1` loads demo customers on start (Compose sets it) |
 | `NARRAI_LLM_PROVIDER` | `ollama` | `ollama` (local, data stays on the machine) or `openai_compatible` (vLLM, EU-hosted APIs, Azure OpenAI…) |
 | `NARRAI_MODEL` | `llama3.2:3b` | Model name for the chosen provider |
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama server |
@@ -86,7 +90,6 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 | `NARRAI_LLM_TIMEOUT` | `120` | Seconds before falling back to templates |
 | `NARRAI_OLLAMA_KEEP_ALIVE` | `30m` | How long Ollama keeps the model loaded between requests (avoids ~60s cold starts) |
 | `NARRAI_WARMUP` | `1` | Load the model and pre-write each bank's latest stories at startup (`0` to disable) |
-| `NARRAI_DB_PATH` | `backend/data/narrai.db` | SQLite file for budgets |
 | `NARRAI_FRONTEND_ORIGINS` | `http://localhost:3000,...` | CORS origins |
 | `NEXT_PUBLIC_API_URL` | `http://127.0.0.1:8000` | API URL used by the frontend |
 
@@ -114,6 +117,25 @@ account label, legal footer, where regulated-advice questions are referred, and 
   files, and the file name must match the id — a bank cannot ship an unreadable theme.
 - `GET /api/tenant` returns the requesting bank's config; disabled features return `403`.
 
+## Data model
+
+Postgres in production, SQLite for quick local development; the schema is versioned with Alembic
+(`backend/migrations/`) and applied with `alembic upgrade head` (the Docker image does this on start).
+
+```
+customers (tenant_id, external_ref) ─┬─ accounts ── transactions (booked_on, merchant, category, amount)
+                                      └─ budgets (category, amount)
+```
+
+- **Every table carries `tenant_id`** (the bank) and every query filters on bank *and* customer; all SQL lives
+  in `backend/repository.py`. Writes re-check that the customer belongs to the bank, so a mismatched
+  bank/customer pair can neither read nor change another bank's data (covered by tests).
+- Amounts are `NUMERIC(12,2)`, positive, with the `Income` category marking money in; database constraints
+  reject negative amounts and zero or negative budgets.
+- The test suite builds its database with the real migrations and fails if `models.py` and the migrations
+  ever disagree. CI runs it on SQLite and Postgres.
+- `python -m seed` loads the same demo customers for every bank (sample account plus three synthetic personas).
+
 ## Budgets
 
 Customers set monthly limits per spending category; progress is calculated by code
@@ -126,8 +148,7 @@ Customers set monthly limits per spending category; progress is calculated by co
 - over-budget cards top the insight feed, and the chat answers "Am I within my budgets?" with the
   exact over/left amounts (a guardrail rejects any other "€X over" figure).
 
-Budgets are stored in SQLite (`NARRAI_DB_PATH`, default `backend/data/narrai.db`), scoped by tenant and
-customer. API: `GET /api/budgets?month=`, `PUT /api/budgets/{category}` `{"amount"}`, `DELETE /api/budgets/{category}`.
+Budgets are stored in the database, scoped by bank and customer. API: `GET /api/budgets?month=`, `PUT /api/budgets/{category}` `{"amount"}`, `DELETE /api/budgets/{category}`.
 
 ## Ask about my money (chat)
 

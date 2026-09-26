@@ -68,19 +68,19 @@ def test_dashboard_has_account_and_transactions():
     assert all(t["amount"] < 0 for t in body["transactions"] if t["category"] != "Income")
 
 
-def test_warm_up_prepares_stories_and_reports_progress(monkeypatch, isolated_budget_store):
+def test_warm_up_prepares_stories_and_reports_progress(monkeypatch, repo):
     import warmup
 
     monkeypatch.setattr(storyteller, "_story_cache", {})
     monkeypatch.setattr(storyteller, "_ask_llm", lambda facts: {})  # model reachable, empty drafts
-    warmup.warm_up(lambda: main.load_transactions(main.DATA_FILE), isolated_budget_store, "demo-customer")
+    warmup.warm_up(repo, "demo-customer")
 
     assert warmup.state["status"] == "ready"
     assert warmup.state["stories_ready"] == warmup.state["stories_total"] > 0
     assert client.get("/api/health").json()["warmup"]["status"] == "ready"
 
 
-def test_warm_up_failure_is_reported_not_raised(monkeypatch, isolated_budget_store):
+def test_warm_up_failure_is_reported_not_raised(monkeypatch, repo):
     import warmup
 
     def offline(_facts):
@@ -88,6 +88,6 @@ def test_warm_up_failure_is_reported_not_raised(monkeypatch, isolated_budget_sto
 
     monkeypatch.setattr(storyteller, "_story_cache", {})
     monkeypatch.setattr(storyteller, "_ask_llm", offline)
-    warmup.warm_up(lambda: main.load_transactions(main.DATA_FILE), isolated_budget_store, "demo-customer")
+    warmup.warm_up(repo, "demo-customer")
     assert warmup.state["status"] == "failed"
-    assert "not reachable" in warmup.state["error"]
+    assert warmup.state["error"] == "RuntimeError"  # no internal details on the public endpoint

@@ -13,15 +13,13 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-# Run as an unprivileged user; budgets live on a mounted volume, not in the image.
-RUN useradd --create-home --uid 10001 narrai \
-    && mkdir -p /data \
-    && chown narrai /data
+# Run as an unprivileged user. Data lives in the database (DATABASE_URL), never in the image.
+RUN useradd --create-home --uid 10001 narrai
 USER narrai
-ENV NARRAI_DB_PATH=/data/narrai.db
 
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=5 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Migrates the database (and seeds demo data if NARRAI_SEED_DEMO=1) before starting.
+CMD ["./docker-entrypoint.sh"]

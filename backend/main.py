@@ -5,7 +5,7 @@ Transactions -> pandas analytics -> verified facts -> LLM narration -> dashboard
 
 import os
 from contextlib import asynccontextmanager
-from pathlib import Path
+from dataclasses import dataclass
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,25 +18,24 @@ from analytics.feed import build_insight_feed
 from analytics.insights import build_facts, comparable_months
 from analytics.spending import (
     account_summary,
-    load_transactions,
     merchant_breakdown,
     month_transactions,
     monthly_spending_by_category,
     spending_only,
 )
+import pandas as pd
+
 import warmup
-from storage import BudgetStore
+from database import make_engine, make_session_factory
+from repository import CustomerRef, Repository
 from tenants import Tenant, get_tenant, load_tenants
 
-DATA_FILE = Path(os.getenv("NARRAI_DATA_FILE", Path(__file__).parent / "data" / "transactions.csv"))
-# Demo account balance before the first transaction in the data file.
-OPENING_BALANCE = float(os.getenv("NARRAI_OPENING_BALANCE", "1840.00"))
 FRONTEND_ORIGINS = os.getenv("NARRAI_FRONTEND_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     if os.getenv("NARRAI_WARMUP", "1") == "1":
-        warmup.start_in_background(_load, budget_store(), DEMO_CUSTOMER)
+        warmup.start_in_background(repository(), DEMO_CUSTOMER)
     else:
         warmup.state["status"] = "disabled"
     yield
@@ -46,7 +45,7 @@ app = FastAPI(
     lifespan=lifespan,
     title="NarrAI Bank API",
     description="AI-powered financial data storytelling. Code calculates, AI narrates.",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 app.add_middleware(
@@ -65,22 +64,46 @@ def current_tenant(x_narrai_tenant: str | None = Header(None)) -> Tenant:
     return tenant
 
 
-# Until authentication lands (Phase 2) every request acts as the one demo customer.
-DEMO_CUSTOMER = "demo-customer"
+# Until authentication lands, every request acts as this demo customer of the requesting bank.
+DEMO_CUSTOMER = os.getenv("NARRAI_DEMO_CUSTOMER", "demo-customer")
+
+_repository: Repository | None = None
 
 
-def current_customer() -> str:
-    return DEMO_CUSTOMER
+def repository() -> Repository:
+    global _repository
+    if _repository is None:
+        _repository = Repository(make_session_factory(make_engine()))
+    return _repository
 
 
-_store: BudgetStore | None = None
+@dataclass
+class CustomerContext:
+    """Everything an endpoint needs about the signed-in customer, loaded once per request."""
+
+    tenant: Tenant
+    customer: CustomerRef
+    repo: Repository
+    df: pd.DataFrame
+
+    def budgets(self) -> dict[str, float]:
+        return self.repo.budgets(self.customer)
 
 
-def budget_store() -> BudgetStore:
-    global _store
-    if _store is None:
-        _store = BudgetStore()
-    return _store
+def customer_context(
+    tenant: Tenant = Depends(current_tenant),
+    repo: Repository = Depends(repository),
+) -> CustomerContext:
+    customer = repo.find_customer(tenant.id, DEMO_CUSTOMER)
+    if customer is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No customer '{DEMO_CUSTOMER}' for {tenant.bank_name}. Run `python -m seed` to load demo data.",
+        )
+    df = repo.transactions(customer)
+    if df.empty:
+        raise HTTPException(status_code=404, detail="This customer has no transactions yet.")
+    return CustomerContext(tenant, customer, repo, df)
 
 
 def require_feature(tenant: Tenant, feature: str) -> None:
@@ -88,13 +111,9 @@ def require_feature(tenant: Tenant, feature: str) -> None:
         raise HTTPException(status_code=403, detail=f"'{feature}' is not enabled for {tenant.bank_name}.")
 
 
-def _load():
-    return load_transactions(DATA_FILE)
-
-
-def _facts_or_404(month: str | None, budgets: dict[str, float] | None = None) -> dict:
+def _facts_or_404(df: pd.DataFrame, month: str | None, budgets: dict[str, float] | None = None) -> dict:
     try:
-        facts = build_facts(_load(), month)
+        facts = build_facts(df, month)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     # Don't suggest a budget the customer already has; the story then narrates the next suggestion.
@@ -125,22 +144,20 @@ def tenant_list():
 
 
 @app.get("/api/months")
-def months():
-    available = comparable_months(_load())
+def months(ctx: CustomerContext = Depends(customer_context)):
+    available = comparable_months(ctx.df)
     return {"months": available, "latest": available[-1] if available else None}
 
 
 @app.get("/api/dashboard")
 def dashboard(
     month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
-    tenant: Tenant = Depends(current_tenant),
-    customer: str = Depends(current_customer),
-    store: BudgetStore = Depends(budget_store),
+    ctx: CustomerContext = Depends(customer_context),
 ):
     """Verified facts plus chart data. Fast: no LLM call."""
-    df = _load()
-    budgets = store.list(tenant.id, customer)
-    facts = _facts_or_404(month, budgets)
+    df = ctx.df
+    budgets = ctx.budgets()
+    facts = _facts_or_404(df, month, budgets)
     spending = spending_only(df)
 
     monthly = monthly_spending_by_category(spending)
@@ -152,7 +169,7 @@ def dashboard(
     return {
         "facts": facts,
         "insights": build_insight_feed(df, facts=facts, budgets=budgets),
-        "account": account_summary(df, facts["month"], OPENING_BALANCE),
+        "account": account_summary(df, facts["month"], ctx.repo.opening_balance(ctx.customer)),
         "transactions": month_transactions(df, facts["month"]),
         "categories": list(monthly.columns),
         "monthly_spending": monthly_spending,
@@ -163,13 +180,11 @@ def dashboard(
 @app.get("/api/story")
 def story(
     month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
-    tenant: Tenant = Depends(current_tenant),
-    customer: str = Depends(current_customer),
-    store: BudgetStore = Depends(budget_store),
+    ctx: CustomerContext = Depends(customer_context),
 ):
     """The four-part narrative. Slow on first call per month (local LLM), then cached."""
-    require_feature(tenant, "story")
-    facts = _facts_or_404(month, store.list(tenant.id, customer))
+    require_feature(ctx.tenant, "story")
+    facts = _facts_or_404(ctx.df, month, ctx.budgets())
     return {"month": facts["month"], **generate_story(facts)}
 
 
@@ -185,21 +200,16 @@ def chat_suggestions():
 
 
 @app.post("/api/chat")
-def chat(
-    request: ChatRequest,
-    tenant: Tenant = Depends(current_tenant),
-    customer: str = Depends(current_customer),
-    store: BudgetStore = Depends(budget_store),
-):
+def chat(request: ChatRequest, ctx: CustomerContext = Depends(customer_context)):
     """Answer a question about the customer's money from verified numbers only."""
-    require_feature(tenant, "chat")
-    df = _load()
+    require_feature(ctx.tenant, "chat")
+    df = ctx.df
     month = request.month or comparable_months(df)[-1]
     if month not in {str(m) for m in df["month"].unique()}:
         raise HTTPException(status_code=404, detail=f"No data for month {month}.")
     return answer_question(
         df, request.question, month, request.previous,
-        advice_contact=tenant.advice_contact, budgets=store.list(tenant.id, customer),
+        advice_contact=ctx.tenant.advice_contact, budgets=ctx.budgets(),
     )
 
 
@@ -207,10 +217,10 @@ class BudgetRequest(BaseModel):
     amount: float = Field(gt=0, le=100_000)
 
 
-def _budget_response(tenant: Tenant, customer: str, store: BudgetStore, month: str | None) -> dict:
-    df = _load()
+def _budget_response(ctx: CustomerContext, month: str | None) -> dict:
+    df = ctx.df
     month = month or comparable_months(df)[-1]
-    budgets = store.list(tenant.id, customer)
+    budgets = ctx.budgets()
     return {
         "month": month,
         "budgets": budget_progress(df, budgets, month),
@@ -221,12 +231,10 @@ def _budget_response(tenant: Tenant, customer: str, store: BudgetStore, month: s
 @app.get("/api/budgets")
 def list_budgets(
     month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
-    tenant: Tenant = Depends(current_tenant),
-    customer: str = Depends(current_customer),
-    store: BudgetStore = Depends(budget_store),
+    ctx: CustomerContext = Depends(customer_context),
 ):
     """Budgets with progress for a month, plus suggested budgets for categories without one."""
-    return _budget_response(tenant, customer, store, month)
+    return _budget_response(ctx, month)
 
 
 @app.put("/api/budgets/{category}")
@@ -234,25 +242,20 @@ def set_budget(
     category: str,
     request: BudgetRequest,
     month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
-    tenant: Tenant = Depends(current_tenant),
-    customer: str = Depends(current_customer),
-    store: BudgetStore = Depends(budget_store),
+    ctx: CustomerContext = Depends(customer_context),
 ):
-    categories = set(spending_only(_load())["category"])
-    if category not in categories:
+    if category not in set(spending_only(ctx.df)["category"]):
         raise HTTPException(status_code=404, detail=f"Unknown spending category '{category}'.")
-    store.set(tenant.id, customer, category, request.amount)
-    return _budget_response(tenant, customer, store, month)
+    ctx.repo.set_budget(ctx.customer, category, request.amount)
+    return _budget_response(ctx, month)
 
 
 @app.delete("/api/budgets/{category}")
 def delete_budget(
     category: str,
     month: str | None = Query(None, pattern=r"^\d{4}-\d{2}$"),
-    tenant: Tenant = Depends(current_tenant),
-    customer: str = Depends(current_customer),
-    store: BudgetStore = Depends(budget_store),
+    ctx: CustomerContext = Depends(customer_context),
 ):
-    if not store.delete(tenant.id, customer, category):
+    if not ctx.repo.delete_budget(ctx.customer, category):
         raise HTTPException(status_code=404, detail=f"No budget for '{category}'.")
-    return _budget_response(tenant, customer, store, month)
+    return _budget_response(ctx, month)
