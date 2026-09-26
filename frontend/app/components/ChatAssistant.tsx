@@ -19,7 +19,7 @@ const SOURCE_BADGES: Record<ChatReply["source"], { label: string; className: str
     title: "Written directly from the calculation",
   },
   policy: {
-    label: "NarrAI policy",
+    label: "Bank policy",
     className: "bg-background text-ink-2",
     title: "Answered by a fixed rule, without AI",
   },
@@ -62,7 +62,7 @@ function AssistantMessage({ reply }: { reply: ChatReply }) {
   );
 }
 
-export function ChatAssistant({ month }: { month: string }) {
+export function ChatAssistant({ month, assistantName }: { month: string; assistantName: string }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -118,9 +118,9 @@ export function ChatAssistant({ month }: { month: string }) {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="fixed right-4 bottom-4 z-30 flex items-center gap-2 rounded-full bg-brand px-5 py-3 text-sm font-semibold text-white shadow-lg hover:bg-brand-dark sm:right-6 sm:bottom-6"
+          className="fixed right-4 bottom-4 z-30 flex items-center gap-2 rounded-full bg-brand px-5 py-3 text-sm font-semibold text-on-brand shadow-lg hover:bg-brand-dark sm:right-6 sm:bottom-6"
         >
-          <span className="flex h-6 w-6 items-center justify-center rounded-sm bg-white text-[11px] font-bold text-brand">
+          <span className="flex h-6 w-6 items-center justify-center rounded-sm bg-on-brand text-[11px] font-bold text-brand">
             AI
           </span>
           Ask about my money
@@ -132,17 +132,17 @@ export function ChatAssistant({ month }: { month: string }) {
           className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-2xl sm:w-[420px]"
           aria-label="Ask about my money"
         >
-          <header className="flex items-center justify-between bg-brand px-5 py-4 text-white">
+          <header className="flex items-center justify-between bg-brand px-5 py-4 text-on-brand">
             <div>
-              <p className="font-semibold">Ask about my money</p>
-              <p className="text-xs text-white/70">
+              <p className="font-semibold">Ask about my money · {assistantName}</p>
+              <p className="text-xs text-on-brand/70">
                 Answers use your {formatMonth(month)} data. Numbers are calculated, never guessed.
               </p>
             </div>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="rounded-sm px-2 py-1 text-xl leading-none text-white/80 hover:bg-white/10 hover:text-white"
+              className="rounded-sm px-2 py-1 text-xl leading-none text-on-brand/80 hover:bg-on-brand/10 hover:text-on-brand"
               aria-label="Close"
             >
               ×
@@ -160,7 +160,7 @@ export function ChatAssistant({ month }: { month: string }) {
             {messages.map((message, index) =>
               message.role === "user" ? (
                 <div key={index} className="flex justify-end">
-                  <p className="max-w-[85%] rounded bg-brand px-3 py-2 text-[15px] text-white">{message.text}</p>
+                  <p className="max-w-[85%] rounded bg-brand px-3 py-2 text-[15px] text-on-brand">{message.text}</p>
                 </div>
               ) : message.role === "assistant" ? (
                 <AssistantMessage key={index} reply={message.reply} />
@@ -207,7 +207,7 @@ export function ChatAssistant({ month }: { month: string }) {
             <button
               type="submit"
               disabled={busy || !input.trim()}
-              className="rounded bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
+              className="rounded bg-brand px-4 py-2 text-sm font-semibold text-on-brand hover:bg-brand-dark disabled:opacity-50"
             >
               Ask
             </button>

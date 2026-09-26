@@ -9,6 +9,7 @@ without an LLM in the loop.
 
 import pandas as pd
 
+from analytics.budgets import budget_progress
 from analytics.insights import build_facts
 from analytics.spending import INCOME_CATEGORY, spending_only
 
@@ -189,14 +190,56 @@ def _income_kept(df: pd.DataFrame, current: pd.Period, facts: dict) -> list[dict
     ]
 
 
-def build_insight_feed(df: pd.DataFrame, month: str | None = None, facts: dict | None = None) -> list[dict]:
+def _budget_alerts(df: pd.DataFrame, facts: dict, budgets: dict[str, float]) -> list[dict]:
+    insights = []
+    for item in budget_progress(df, budgets, facts["month"]):
+        category = item["category"]
+        if item["status"] == "over":
+            insights.append({
+                "id": f"budget-{category}",
+                "type": "budget",
+                "tone": "warning",
+                "title": f"Over your {category.lower()} budget",
+                "detail": (
+                    f"You spent {_eur(item['spent'])} of your {_eur(item['budget'])} budget, "
+                    f"{_eur(abs(item['remaining']))} over."
+                ),
+                "category": category,
+                "amount": item["spent"],
+                # A goal the customer set themselves: going over it outranks every other card.
+                "score": 150 + item["percent_used"] / 10,
+            })
+        elif item["status"] == "close":
+            insights.append({
+                "id": f"budget-{category}",
+                "type": "budget",
+                "tone": "neutral",
+                "title": f"Close to your {category.lower()} budget",
+                "detail": (
+                    f"You used {item['percent_used']:.1f}% of your {_eur(item['budget'])} budget; "
+                    f"{_eur(item['remaining'])} left."
+                ),
+                "category": category,
+                "amount": item["spent"],
+                "score": 45 + item["percent_used"] / 10,
+            })
+    return insights
+
+
+def build_insight_feed(
+    df: pd.DataFrame,
+    month: str | None = None,
+    facts: dict | None = None,
+    budgets: dict[str, float] | None = None,
+) -> list[dict]:
     """Ranked insight cards for a month; `df` may include income rows."""
     facts = facts or build_facts(df, month)
     current = pd.Period(facts["month"], freq="M")
     spending = spending_only(df)
 
     candidates = (
-        _unusual_payments(facts)
+        _budget_alerts(df, facts, budgets or {})
+        + _unusual_payments(facts)
         + _income_kept(df, current, facts)
         + _category_moves(facts)
         + _new_merchants(spending, current, facts)

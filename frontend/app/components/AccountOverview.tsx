@@ -4,7 +4,7 @@ import { formatEuro, formatMonth, formatSignedEuro } from "../lib/format";
 function Flow({ label, value, tone }: { label: string; value: string; tone?: "positive" }) {
   return (
     <div>
-      <p className="text-xs uppercase tracking-wide text-white/60">{label}</p>
+      <p className="text-xs uppercase tracking-wide text-on-brand/60">{label}</p>
       <p className={`mt-1 text-lg font-semibold tabular-nums ${tone === "positive" ? "text-emerald-300" : ""}`}>
         {value}
       </p>
@@ -12,14 +12,14 @@ function Flow({ label, value, tone }: { label: string; value: string; tone?: "po
   );
 }
 
-export function AccountOverview({ account }: { account: Account }) {
+export function AccountOverview({ account, label }: { account: Account; label: string }) {
   return (
-    <section id="overview" className="scroll-mt-24 overflow-hidden rounded bg-brand-dark text-white">
+    <section id="overview" className="scroll-mt-24 overflow-hidden rounded bg-brand-dark text-on-brand">
       <div className="flex flex-wrap items-end justify-between gap-6 p-6 sm:p-8">
         <div>
-          <p className="text-sm text-white/70">Current account · Demo</p>
-          <p className="mt-1 font-mono text-sm tracking-wider text-white/60">DE•• •••• •••• •••• •••• 00</p>
-          <p className="mt-6 text-sm text-white/70">Balance at end of {formatMonth(account.month)}</p>
+          <p className="text-sm text-on-brand/70">{label} · Demo</p>
+          <p className="mt-1 font-mono text-sm tracking-wider text-on-brand/60">DE•• •••• •••• •••• •••• 00</p>
+          <p className="mt-6 text-sm text-on-brand/70">Balance at end of {formatMonth(account.month)}</p>
           <p className="mt-1 text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">
             {formatEuro(account.balance)}
           </p>

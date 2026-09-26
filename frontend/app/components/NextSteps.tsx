@@ -10,7 +10,15 @@ const LABELS: Record<Recommendation["type"], string> = {
   alert: "Unusual payment",
 };
 
-export function NextSteps({ recommendations }: { recommendations: Recommendation[] }) {
+export function NextSteps({
+  recommendations,
+  budgetedCategories,
+  onCreateBudget,
+}: {
+  recommendations: Recommendation[];
+  budgetedCategories: Set<string>;
+  onCreateBudget: (category: string, amount: number) => void;
+}) {
   return (
     <Card title="What you can do next" subtitle="Suggestions calculated from your own spending history.">
       {recommendations.length === 0 ? (
@@ -38,6 +46,19 @@ export function NextSteps({ recommendations }: { recommendations: Recommendation
                     </p>
                     <p className="mt-1 font-medium text-ink">{rec.title}</p>
                     <p className="mt-1 text-sm leading-6 text-ink-2">{rec.detail}</p>
+                    {rec.type === "budget" && rec.category && rec.budget && (
+                      budgetedCategories.has(rec.category) ? (
+                        <p className="mt-2 text-sm font-medium text-positive">✓ Budget set, see Budgets</p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onCreateBudget(rec.category!, rec.budget!)}
+                          className="mt-2 rounded-sm border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand-soft"
+                        >
+                          Create this budget
+                        </button>
+                      )
+                    )}
                   </div>
                   {rec.amount !== null && !isAlert && (
                     <div className="shrink-0 text-right">

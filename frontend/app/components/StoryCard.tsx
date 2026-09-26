@@ -33,22 +33,24 @@ export function StoryCard({
   loading,
   error,
   monthLabel,
+  assistantName,
 }: {
   story: Story | null;
   loading: boolean;
   error: string | null;
   monthLabel: string;
+  assistantName: string;
 }) {
   return (
     <section id="insights" className="scroll-mt-24 rounded border border-border border-l-4 border-l-brand bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <span className="flex h-8 w-8 items-center justify-center rounded-sm bg-brand text-sm font-bold text-white">
+          <span className="flex h-8 w-8 items-center justify-center rounded-sm bg-brand text-sm font-bold text-on-brand">
             AI
           </span>
           <div>
             <h2 className="text-base font-semibold text-ink">Your {monthLabel} in a nutshell</h2>
-            <p className="text-sm text-ink-3">Numbers calculated by NarrAI analytics, explained in plain words.</p>
+            <p className="text-sm text-ink-3">Numbers calculated by {assistantName}, explained in plain words.</p>
           </div>
         </div>
         {story && (

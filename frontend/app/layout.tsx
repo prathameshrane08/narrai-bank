@@ -12,9 +12,10 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Neutral on purpose: the bank's own name is applied from its white-label config at runtime.
 export const metadata: Metadata = {
-  title: "NarrAI Bank",
-  description: "Your finances, explained as a story. Code calculates, AI narrates.",
+  title: "Online Banking",
+  description: "Your money, explained. Figures are calculated by code; the AI only narrates them.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

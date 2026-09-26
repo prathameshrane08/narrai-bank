@@ -43,11 +43,12 @@ ADVICE_PATTERN = re.compile(
 )
 ADVICE_REPLY = (
     "I can explain your own spending and income, but I can't give investment, credit or other "
-    "financial advice. For that, please talk to a licensed adviser at your bank."
+    "financial advice. For that, please talk to {contact}."
 )
 
 SUGGESTIONS = [
     "How much did I spend on restaurants this month?",
+    "Am I within my budgets?",
     "Where did most of my money go?",
     "Compare my groceries with last month",
     "What were my biggest payments?",
@@ -141,6 +142,7 @@ CATEGORY_SYNONYMS = {
 
 # Clear phrasings route deterministically; the LLM only decides the ambiguous rest.
 KEYWORD_RULES = [
+    (("budget", "limit i set", "over my limit"), "budget_status"),
     (("compare", " vs", "versus", "than last", "than in", "difference between"), "compare"),
     (("unusual", "suspicious", "strange", "weird", "fraud", "anything odd"), "unusual"),
     (("biggest payment", "largest", "most expensive", "biggest purchase", "biggest expense", "biggest payments"),
@@ -240,13 +242,13 @@ def route(question: str, ctx: dict, previous: dict | None = None) -> tuple[dict,
 
 # ---------------------------------------------------------------- answering
 
-def _run_query(df: pd.DataFrame, plan: dict) -> dict:
+def _run_query(df: pd.DataFrame, plan: dict, budgets: dict[str, float] | None = None) -> dict:
     function, _ = queries.TOOLS[plan["tool"]]
     month = pd.Period(plan["month"], freq="M")
     compare_month = pd.Period(plan["compare_month"], freq="M") if plan.get("compare_month") else None
     return function(
         df, month=month, compare_month=compare_month, category=plan["category"],
-        merchant=plan["merchant"], n=plan["n"],
+        merchant=plan["merchant"], n=plan["n"], budgets=budgets,
     )
 
 
@@ -274,6 +276,21 @@ def _allowed_numbers(result: dict) -> set[float]:
     return collect_allowed_numbers({"facts": [f"{k} {v}" for k, v in result["facts"].items()], "args": result["args"]})
 
 
+OVER_LEFT_PATTERN = re.compile(r"€\s?(\d[\d,]*(?:\.\d+)?)\s+(over|left|remaining|under)\b", re.IGNORECASE)
+
+
+def _budget_difference_ok(text: str, result: dict) -> bool:
+    """'€X over' / '€X left' must be a verified budget difference, not any number from the facts."""
+    if result["tool"] != "budget_status":
+        return True
+    verified = {
+        float(str(value).replace("€", "").replace(",", ""))
+        for label, value in result["facts"].items()
+        if label.endswith(("over budget by", "left in budget"))
+    }
+    return all(float(amount.replace(",", "")) in verified for amount, _ in OVER_LEFT_PATTERN.findall(text))
+
+
 def _names_scope(text: str, plan: dict, question: str) -> bool:
     """A category or merchant answer must say what it is about, in our words or the customer's."""
     target = plan.get("merchant") or plan.get("category")
@@ -284,13 +301,20 @@ def _names_scope(text: str, plan: dict, question: str) -> bool:
     return any(word in lowered for word in words)
 
 
-def answer_question(df: pd.DataFrame, question: str, month: str, previous: dict | None = None) -> dict:
+def answer_question(
+    df: pd.DataFrame,
+    question: str,
+    month: str,
+    previous: dict | None = None,
+    advice_contact: str = "a licensed adviser at your bank",
+    budgets: dict[str, float] | None = None,
+) -> dict:
     question = question.strip()[:500]
     ctx = _context(df, month)
     base = {"question": question, "month": month, "suggestions": SUGGESTIONS[:3]}
 
     if ADVICE_PATTERN.search(question):
-        return {**base, "answer": ADVICE_REPLY, "source": "policy", "tool": "unsupported", "plan": None,
+        return {**base, "answer": ADVICE_REPLY.format(contact=advice_contact), "source": "policy", "tool": "unsupported", "plan": None,
                 "facts": {}, "issues": [], "router": "policy"}
 
     plan, router = route(question, ctx, previous)
@@ -304,7 +328,7 @@ def answer_question(df: pd.DataFrame, question: str, month: str, previous: dict 
                 "facts": {}, "issues": [], "router": router}
 
     try:
-        result = _run_query(df, plan)
+        result = _run_query(df, plan, budgets)
     except ValueError as exc:
         return {**base, "answer": f"I couldn't calculate that: {exc}", "source": "policy", "tool": plan["tool"],
                 "plan": plan, "facts": {}, "issues": [], "router": router}
@@ -317,6 +341,8 @@ def answer_question(df: pd.DataFrame, question: str, month: str, previous: dict 
             issues = validate_sentence(text, _allowed_numbers(result), max_length=MAX_ANSWER_LENGTH)
             if not _names_scope(text, plan, question):
                 issues.append("missing topic (category or merchant)")
+            if not _budget_difference_ok(text, result):
+                issues.append("wrong budget difference")
     except Exception as exc:
         logger.warning("LLM answer unavailable, using template: %s", exc)
 

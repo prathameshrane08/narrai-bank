@@ -61,6 +61,34 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 | `POST /api/chat` | Answer a customer question from verified numbers |
 | `GET /api/chat/suggestions` | Example questions for the chat UI |
 
+## White-label (one config per bank)
+
+Each bank is a JSON file in `backend/tenants/` (examples: `narrai`, `kestrel`, `aurelia` — the latter two
+are fictional demo brands) with its name, assistant name, logo (`frontend/public/tenants/`), colours,
+account label, legal footer, where regulated-advice questions are referred, and feature flags
+(`story`, `chat`, `insights`).
+
+- The tenant is chosen per request with the `X-NarrAI-Tenant` header; the frontend sets it from
+  `NEXT_PUBLIC_TENANT` or, for demos, `?bank=<id>` (the footer has a brand switcher).
+- Configs are validated on load: colours must meet **WCAG AA contrast (4.5:1)**, logos must be local
+  files, and the file name must match the id — a bank cannot ship an unreadable theme.
+- `GET /api/tenant` returns the requesting bank's config; disabled features return `403`.
+
+## Budgets
+
+Customers set monthly limits per spending category; progress is calculated by code
+(`backend/analytics/budgets.py`), never by the LLM:
+
+- spent vs. budget, remaining, status (`on_track` < 80% ≤ `close` ≤ 100% < `over`),
+  a month-end projection while the month is in progress, and how many of the last 3 months stayed within;
+- suggested amounts from typical spending (average of the previous 3 months, rounded up to €5),
+  with one-click "Create this budget" from the recommendations;
+- over-budget cards top the insight feed, and the chat answers "Am I within my budgets?" with the
+  exact over/left amounts (a guardrail rejects any other "€X over" figure).
+
+Budgets are stored in SQLite (`NARRAI_DB_PATH`, default `backend/data/narrai.db`), scoped by tenant and
+customer. API: `GET /api/budgets?month=`, `PUT /api/budgets/{category}` `{"amount"}`, `DELETE /api/budgets/{category}`.
+
 ## Ask about my money (chat)
 
 `POST /api/chat {"question", "month", "previous"}` answers questions from verified numbers only:

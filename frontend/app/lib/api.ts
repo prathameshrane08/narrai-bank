@@ -1,5 +1,25 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
+// Which bank (white-label tenant) this app instance is serving; sent with every request.
+let tenantId = process.env.NEXT_PUBLIC_TENANT ?? "narrai";
+
+export function setTenantId(id: string) {
+  tenantId = id;
+}
+
+export type Tenant = {
+  id: string;
+  bank_name: string;
+  assistant_name: string;
+  tagline: string;
+  logo: string;
+  colours: { brand: string; brand_dark: string; brand_soft: string; on_brand: string };
+  account_label: string;
+  legal_footer: string;
+  advice_contact: string;
+  features: { story?: boolean; chat?: boolean; insights?: boolean };
+};
+
 export type CategoryChange = {
   category: string;
   current: number;
@@ -41,6 +61,8 @@ export type Alert = {
 
 export type Recommendation = {
   type: "budget" | "merchant" | "pattern" | "savings" | "alert";
+  category?: string;
+  budget?: number;
   title: string;
   detail: string;
   amount: number | null;
@@ -63,7 +85,7 @@ export type Facts = {
 
 export type Insight = {
   id: string;
-  type: "category_change" | "unusual_payment" | "new_merchant" | "weekend_pattern" | "savings_rate";
+  type: "category_change" | "unusual_payment" | "new_merchant" | "weekend_pattern" | "savings_rate" | "budget";
   tone: "warning" | "positive" | "neutral";
   title: string;
   detail: string;
@@ -147,12 +169,16 @@ export type ChatReply = {
 };
 
 async function get<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`);
+  const response = await fetch(`${API_URL}${path}`, { headers: { "X-NarrAI-Tenant": tenantId } });
   if (!response.ok) {
     throw new Error(`Request to ${path} failed with status ${response.status}`);
   }
   return response.json();
 }
+
+export const fetchTenant = () => get<Tenant>("/api/tenant");
+
+export const fetchTenants = () => get<{ tenants: { id: string; bank_name: string }[] }>("/api/tenants");
 
 export const fetchMonths = () =>
   get<{ months: string[]; latest: string | null }>("/api/months");
@@ -168,7 +194,7 @@ export const fetchChatSuggestions = () => get<{ suggestions: string[] }>("/api/c
 export async function askQuestion(question: string, month: string, previous: ChatPlan | null): Promise<ChatReply> {
   const response = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-NarrAI-Tenant": tenantId },
     body: JSON.stringify({ question, month, previous }),
   });
   if (!response.ok) {
@@ -176,3 +202,42 @@ export async function askQuestion(question: string, month: string, previous: Cha
   }
   return response.json();
 }
+
+export type BudgetProgress = {
+  category: string;
+  budget: number;
+  spent: number;
+  remaining: number;
+  percent_used: number;
+  status: "on_track" | "close" | "over";
+  in_progress: boolean;
+  projected: number | null;
+  months_within_budget: number;
+  months_checked: number;
+};
+
+export type Budgets = {
+  month: string;
+  budgets: BudgetProgress[];
+  suggestions: { category: string; amount: number }[];
+};
+
+async function send<T>(method: "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json", "X-NarrAI-Tenant": tenantId },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`${method} ${path} failed with status ${response.status}`);
+  }
+  return response.json();
+}
+
+export const fetchBudgets = (month: string) => get<Budgets>(`/api/budgets?month=${month}`);
+
+export const saveBudget = (category: string, amount: number, month: string) =>
+  send<Budgets>("PUT", `/api/budgets/${encodeURIComponent(category)}?month=${month}`, { amount });
+
+export const removeBudget = (category: string, month: string) =>
+  send<Budgets>("DELETE", `/api/budgets/${encodeURIComponent(category)}?month=${month}`);

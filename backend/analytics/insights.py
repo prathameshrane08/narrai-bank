@@ -167,6 +167,8 @@ def _recommendations(headline: dict, drivers: list[dict], patterns: dict, alerts
             recs.append(
                 {
                     "type": "budget",
+                    "category": category,
+                    "budget": float(budget),
                     "title": f"Set a €{budget} monthly {category.lower()} budget",
                     "detail": (
                         f"Your typical {category.lower()} spending is €{headline['trailing_average']:.2f}. "

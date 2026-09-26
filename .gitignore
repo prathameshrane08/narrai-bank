@@ -18,3 +18,4 @@ next-env.d.ts
 
 # Generated eval reports (re-create with: python -m evals.run_eval)
 backend/evals/reports/
+backend/data/*.db

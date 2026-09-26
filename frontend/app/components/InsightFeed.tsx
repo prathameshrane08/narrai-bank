@@ -7,6 +7,7 @@ const TYPE_LABELS: Record<Insight["type"], string> = {
   new_merchant: "New merchant",
   weekend_pattern: "Pattern",
   savings_rate: "Income",
+  budget: "Budget",
 };
 
 // Status is carried by an icon and a label as well as colour, never colour alone.

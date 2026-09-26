@@ -12,6 +12,7 @@ its wording fails the guardrails.
 
 import pandas as pd
 
+from analytics.budgets import budget_progress
 from analytics.insights import build_facts
 from analytics.spending import INCOME_CATEGORY, percentage_change, spending_only
 
@@ -212,6 +213,35 @@ def unusual(df, month: pd.Period, **_):
     return _result("unusual", {"month": str(month)}, facts, summary)
 
 
+def budget_status(df, month: pd.Period, category=None, budgets=None, **_):
+    budgets = budgets or {}
+    if category:
+        budgets = {k: v for k, v in budgets.items() if k == category}
+    progress = budget_progress(df, budgets, str(month))
+
+    facts = {"Month": _label(month), "Budgets set": len(progress)}
+    parts = []
+    for item in progress:
+        state = {"over": "over budget", "close": "close to the limit", "on_track": "within budget"}[item["status"]]
+        facts[f"{item['category']} budget"] = (
+            f"{_eur(item['spent'])} spent of {_eur(item['budget'])} ({item['percent_used']:.1f}%, {state})"
+        )
+        # State the difference explicitly so the model never has to work it out.
+        if item["remaining"] < 0:
+            facts[f"{item['category']} over budget by"] = _eur(abs(item["remaining"]))
+        else:
+            facts[f"{item['category']} left in budget"] = _eur(item["remaining"])
+        parts.append(f"{item['category'].lower()}: {_eur(item['spent'])} of {_eur(item['budget'])}, {state}")
+
+    if parts:
+        summary = f"Your budgets in {_label(month)}: " + "; ".join(parts) + "."
+    elif category:
+        summary = f"You haven't set a {category.lower()} budget yet."
+    else:
+        summary = "You haven't set any budgets yet. You can add one in the Budgets section."
+    return _result("budget_status", {"month": str(month), "category": category}, facts, summary)
+
+
 TOOLS = {
     "spending": (spending, "How much was spent (optionally in a category or at a merchant) in a month."),
     "top_merchants": (top_merchants, "Where the most money went: top merchants in a month (optionally one category)."),
@@ -220,5 +250,6 @@ TOOLS = {
     "breakdown": (breakdown, "Spending split by category for a month."),
     "monthly_average": (monthly_average, "Average monthly spending over recent months (optionally a category or merchant)."),
     "income": (income, "Income, money out, and how much was kept or saved in a month."),
+    "budget_status": (budget_status, "Whether spending is within the customer's budgets (optionally one category)."),
     "unusual": (unusual, "Payments that were unusually high compared with the merchant's history."),
 }

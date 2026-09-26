@@ -15,15 +15,18 @@
   --brand: #0018a8;
   --brand-dark: #00106e;
   --brand-soft: #e8ebfa;
+  --on-brand: #ffffff;
   --accent: #0018a8;
 
   --positive: #0a7a45;
   --negative: #0b1b36;
   --warning: #9a5a00;
   --warning-bg: #fff6e5;
+  --critical: #b42318;
+  --critical-bg: #fef3f2;
 
   /* Categorical palette, fixed order. */
-  --cat-1: #0018a8;
+  --cat-1: #2f6fdb;
   --cat-2: #0d9488;
   --cat-3: #e09100;
   --cat-4: #b62fb8;
@@ -44,10 +47,13 @@
   --color-brand: var(--brand);
   --color-brand-dark: var(--brand-dark);
   --color-brand-soft: var(--brand-soft);
+  --color-on-brand: var(--on-brand);
   --color-accent: var(--accent);
   --color-positive: var(--positive);
   --color-warning: var(--warning);
   --color-warning-bg: var(--warning-bg);
+  --color-critical: var(--critical);
+  --color-critical-bg: var(--critical-bg);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
