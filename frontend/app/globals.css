@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/* Retail-banking look: light surfaces, one deep brand blue, square-ish corners. */
+:root {
+  color-scheme: light;
+
+  --background: #f2f4f7;
+  --surface: #ffffff;
+  --border: #dde2ea;
+  --ink: #0b1b36;
+  --ink-2: #3f4c63;
+  --ink-3: #6b778c;
+  --grid: #edf0f4;
+
+  --brand: #0018a8;
+  --brand-dark: #00106e;
+  --brand-soft: #e8ebfa;
+  --accent: #0018a8;
+
+  --positive: #0a7a45;
+  --negative: #0b1b36;
+  --warning: #9a5a00;
+  --warning-bg: #fff6e5;
+
+  /* Categorical palette, fixed order. */
+  --cat-1: #0018a8;
+  --cat-2: #0d9488;
+  --cat-3: #e09100;
+  --cat-4: #b62fb8;
+  --cat-5: #7c8aa0;
+  --cat-6: #d4481f;
+  --cat-7: #5b8c1a;
+  --cat-8: #3d2f8f;
+  --cat-other: #aab3c2;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-brand: var(--brand);
+  --color-brand-dark: var(--brand-dark);
+  --color-brand-soft: var(--brand-soft);
+  --color-accent: var(--accent);
+  --color-positive: var(--positive);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--ink);
+}
+
+/* Mouse clicks on charts shouldn't draw a focus box; keyboard focus still shows one. */
+.recharts-wrapper :focus:not(:focus-visible),
+.recharts-wrapper:focus:not(:focus-visible) {
+  outline: none;
+}

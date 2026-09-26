@@ -1,0 +1,61 @@
+date,merchant,category,amount
+2026-04-01,BVG,Transport,49.00
+2026-04-03,Netflix,Subscriptions,13.99
+2026-04-04,REWE,Groceries,45.20
+2026-04-09,Lidl,Groceries,28.70
+2026-04-10,Spotify,Subscriptions,10.99
+2026-04-11,Dominos,Restaurant,21.50
+2026-04-14,Uber,Transport,12.40
+2026-04-18,REWE,Groceries,41.80
+2026-04-22,Zalando,Shopping,59.95
+2026-04-24,L'Osteria,Restaurant,26.00
+2026-04-27,Lidl,Groceries,24.60
+2026-05-01,BVG,Transport,49.00
+2026-05-02,REWE,Groceries,47.30
+2026-05-03,Netflix,Subscriptions,13.99
+2026-05-07,Lidl,Groceries,30.10
+2026-05-10,Spotify,Subscriptions,10.99
+2026-05-13,Vapiano,Restaurant,24.80
+2026-05-16,REWE,Groceries,43.60
+2026-05-20,Uber,Transport,14.20
+2026-05-23,Dominos,Restaurant,19.90
+2026-05-28,dm,Shopping,23.45
+2026-05-30,Lidl,Groceries,27.40
+2026-06-01,BVG,Transport,49.00
+2026-06-03,Netflix,Subscriptions,13.99
+2026-06-05,REWE,Groceries,44.90
+2026-06-10,Spotify,Subscriptions,10.99
+2026-06-11,Lidl,Groceries,29.30
+2026-06-13,L'Osteria,Restaurant,27.50
+2026-06-17,Uber,Transport,13.10
+2026-06-19,REWE,Groceries,42.20
+2026-06-24,Zalando,Shopping,44.90
+2026-06-26,Dominos,Restaurant,23.00
+2026-06-27,Lidl,Groceries,26.80
+2026-07-01,BVG,Transport,49.00
+2026-07-03,Netflix,Subscriptions,13.99
+2026-07-04,REWE,Groceries,42.50
+2026-07-06,Lidl,Groceries,31.20
+2026-07-10,Spotify,Subscriptions,10.99
+2026-07-11,L'Osteria,Restaurant,28.50
+2026-07-15,Uber,Transport,12.80
+2026-07-18,Dominos,Restaurant,22.00
+2026-07-22,dm,Shopping,18.70
+2026-07-25,REWE,Groceries,46.30
+2026-08-01,BVG,Transport,49.00
+2026-08-02,REWE,Groceries,44.10
+2026-08-03,Netflix,Subscriptions,13.99
+2026-08-08,L'Osteria,Restaurant,39.50
+2026-08-10,Spotify,Subscriptions,10.99
+2026-08-12,Lidl,Groceries,29.80
+2026-08-15,Dominos,Restaurant,32.00
+2026-08-19,REWE,Groceries,38.90
+2026-08-20,Uber,Transport,36.50
+2026-08-22,Vapiano,Restaurant,41.50
+2026-08-26,Zalando,Shopping,52.90
+2026-08-29,L'Osteria,Restaurant,36.50
+2026-04-30,Arbeitgeber GmbH,Income,2850.00
+2026-05-29,Arbeitgeber GmbH,Income,2850.00
+2026-06-30,Arbeitgeber GmbH,Income,2850.00
+2026-07-31,Arbeitgeber GmbH,Income,2850.00
+2026-08-31,Arbeitgeber GmbH,Income,2850.00

@@ -1,0 +1,20 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node / Next.js
+node_modules/
+frontend/.next/
+frontend/out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Env & OS
+.env*
+.DS_Store
+
+# Generated eval reports (re-create with: python -m evals.run_eval)
+backend/evals/reports/
