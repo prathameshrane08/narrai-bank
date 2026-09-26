@@ -12,6 +12,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     CheckConstraint,
     Date,
@@ -50,6 +51,8 @@ class Customer(Base):
     external_ref: Mapped[str] = mapped_column(String(80))
     display_name: Mapped[str] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # Every session token carries this number; "sign out everywhere" increments it, so older tokens stop working.
+    session_generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class Account(Base):
@@ -115,3 +118,32 @@ class ApiKey(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class RevokedSession(Base):
+    """Session tokens signed out before they expired. Rows can be purged once `expires_at` has passed."""
+
+    __tablename__ = "revoked_sessions"
+
+    jti: Mapped[str] = mapped_column(String(64), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class AuditEvent(Base):
+    """Append-only record of security-relevant actions.
+
+    Holds identifiers and counts only: no names, amounts, account numbers or IP addresses,
+    so it can be kept for accountability after a customer's data is deleted.
+    """
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(40), index=True)
+    actor_type: Mapped[str] = mapped_column(String(20))  # customer | bank | operator | system
+    actor_id: Mapped[str] = mapped_column(String(64))  # customer id, API key prefix, "cli"
+    action: Mapped[str] = mapped_column(String(60), index=True)
+    customer_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)

@@ -2,7 +2,7 @@
 
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
-import { type ChatReply, askQuestion, fetchChatSuggestions } from "../lib/api";
+import { type ChatReply, RateLimitedError, askQuestion, fetchChatSuggestions } from "../lib/api";
 import { formatMonth } from "../lib/format";
 
 type Message = { role: "user"; text: string } | { role: "assistant"; reply: ChatReply } | { role: "error"; text: string };
@@ -112,8 +112,9 @@ export function ChatAssistant({ month, assistantName }: { month: string; assista
     try {
       const reply = await askQuestion(text, month, previous);
       setMessages((current) => [...current, { role: "assistant", reply }]);
-    } catch {
-      setMessages((current) => [...current, { role: "error", text: "Sorry, I couldn't answer that right now." }]);
+    } catch (err) {
+      const text = err instanceof RateLimitedError ? err.message : "Sorry, I couldn't answer that right now.";
+      setMessages((current) => [...current, { role: "error", text }]);
     } finally {
       setBusy(false);
     }

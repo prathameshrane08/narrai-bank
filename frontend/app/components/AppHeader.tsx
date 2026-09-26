@@ -24,12 +24,14 @@ export function AppHeader({
   logo,
   customerName,
   onSignOut,
+  onDownloadData,
 }: {
   monthPicker: ReactNode;
   bankName?: string;
   logo?: string;
   customerName?: string;
   onSignOut?: () => void;
+  onDownloadData?: () => void;
 }) {
   return (
     <header className="sticky top-0 z-20 bg-brand text-on-brand shadow-sm">
@@ -62,6 +64,18 @@ export function AppHeader({
               >
                 {initials(customerName)}
               </span>
+            </span>
+          )}
+          {onDownloadData && (
+            <span className="max-lg:[display:none]">
+              <button
+                type="button"
+                onClick={onDownloadData}
+                className="rounded-sm px-2 py-1.5 text-sm text-on-brand/80 hover:bg-on-brand/10 hover:text-on-brand"
+                title="Download everything stored about you (JSON)"
+              >
+                My data
+              </button>
             </span>
           )}
           {onSignOut && (

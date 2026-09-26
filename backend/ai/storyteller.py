@@ -222,6 +222,11 @@ def assemble_story(facts: dict, draft: dict, ai_available: bool) -> dict:
     return {"sections": sections, "model": model_name(), "ai_available": ai_available}
 
 
+def clear_story_cache() -> None:
+    """Forget every cached story (e.g. after a customer's data is erased)."""
+    _story_cache.clear()
+
+
 def generate_story(facts: dict, use_cache: bool = True) -> dict:
     """Return {"sections": {name: {"text", "source", "issues"}}, "model", "ai_available"}."""
     key = _cache_key(facts)

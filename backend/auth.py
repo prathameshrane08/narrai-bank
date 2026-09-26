@@ -51,7 +51,7 @@ def _secret() -> str:
     return DEV_SECRET_FILE.read_text().strip()
 
 
-def issue_session(tenant_id: str, customer_id: str) -> tuple[str, datetime]:
+def issue_session(tenant_id: str, customer_id: str, generation: int = 0) -> tuple[str, datetime]:
     now = datetime.now(timezone.utc)
     expires = now + timedelta(minutes=session_minutes())
     claims = {
@@ -61,6 +61,7 @@ def issue_session(tenant_id: str, customer_id: str) -> tuple[str, datetime]:
         "iat": now,
         "exp": expires,
         "jti": uuid.uuid4().hex,
+        "gen": generation,  # must match the customer's current session generation
     }
     return jwt.encode(claims, _secret(), algorithm=ALGORITHM), expires
 

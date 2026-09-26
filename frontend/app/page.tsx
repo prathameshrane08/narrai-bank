@@ -30,6 +30,7 @@ import {
   fetchTenants,
   removeBudget,
   restoreSession,
+  downloadMyData,
   saveBudget,
   setTenantId,
   signOut,
@@ -120,7 +121,7 @@ export default function Home() {
 
   // Clear everything that belongs to the signed-in customer.
   const endSession = useCallback((notice: string | null) => {
-    signOut();
+    void signOut();
     setSession(null);
     setSignInNotice(notice);
     setMonth(null);
@@ -305,6 +306,7 @@ export default function Home() {
           logo={tenant.logo}
           customerName={session.customerName}
           onSignOut={() => endSession(null)}
+          onDownloadData={() => downloadMyData().catch((err) => handleFailure(err, "Your data couldn't be downloaded."))}
         />
       }
       footer={

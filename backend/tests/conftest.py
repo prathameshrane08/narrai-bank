@@ -55,6 +55,16 @@ def repo(database_url):
 
 
 @pytest.fixture(autouse=True)
+def fresh_rate_limits():
+    """Rate-limit counters don't carry over between tests (tests of the limits reset them too)."""
+    from ratelimit import limiter
+
+    limiter.reset()
+    yield
+    limiter.reset()
+
+
+@pytest.fixture(autouse=True)
 def isolated_repository(repo):
     """Every test starts with no budgets and talks to the test database."""
     with repo.session_factory.begin() as session:

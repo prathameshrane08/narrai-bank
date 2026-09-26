@@ -14,6 +14,9 @@ export type Session = { token: string; expiresAt: string; customerName: string }
 /** Thrown when the API says the session is missing, invalid or expired (HTTP 401). */
 export class SignedOutError extends Error {}
 
+/** Thrown when the API asks us to slow down (HTTP 429). */
+export class RateLimitedError extends Error {}
+
 let session: Session | null = null;
 
 // Per browser tab, per bank. In production the bank's app hands NarrAI the session;
@@ -40,8 +43,19 @@ function storeSession(value: Session | null) {
   }
 }
 
-export function signOut() {
+/** Sign out: revoke the session on the server (best effort), then forget it locally. */
+export async function signOut() {
+  const current = session;
   storeSession(null);
+  if (!current) return;
+  try {
+    await fetch(`${API_URL}/api/sessions/current/revoke`, {
+      method: "POST",
+      headers: { "X-NarrAI-Tenant": tenantId, Authorization: `Bearer ${current.token}` },
+    });
+  } catch {
+    // Offline: the token still expires on its own within the session lifetime.
+  }
 }
 
 function headers(extra: Record<string, string> = {}): Record<string, string> {
@@ -56,6 +70,12 @@ async function parse<T>(response: Response, what: string): Promise<T> {
   if (response.status === 401) {
     storeSession(null);
     throw new SignedOutError("Your session has ended. Please sign in again.");
+  }
+  if (response.status === 429) {
+    const wait = response.headers.get("Retry-After");
+    throw new RateLimitedError(
+      `You're going a little fast. Please try again${wait ? ` in ${wait} seconds` : " shortly"}.`,
+    );
   }
   if (!response.ok) {
     throw new Error(`${what} failed with status ${response.status}`);
@@ -315,4 +335,16 @@ export async function demoSignIn(ref: string): Promise<Session> {
   const value = { token: body.token, expiresAt: body.expires_at, customerName: body.customer.name };
   storeSession(value);
   return value;
+}
+
+/** The signed-in customer's own data (GDPR export), saved as a JSON file. */
+export async function downloadMyData(): Promise<void> {
+  const response = await fetch(`${API_URL}/api/me/export`, { headers: headers() });
+  if (!response.ok) await parse(response, "Data export");
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "my-data.json";
+  link.click();
+  URL.revokeObjectURL(url);
 }

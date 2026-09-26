@@ -83,6 +83,9 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 | `DATABASE_URL` | `sqlite:///backend/data/narrai-dev.db` | Postgres in production, e.g. `postgresql+psycopg://user:pass@host/narrai` |
 | `NARRAI_TOKEN_SECRET` | dev file `backend/data/.token-secret` | **Required in production**: ≥32 random characters used to sign session tokens |
 | `NARRAI_SESSION_MINUTES` | `30` | Session token lifetime |
+| `NARRAI_RATE_LIMITS` | `1` | `0` disables rate limiting (e.g. load tests) |
+| `NARRAI_TRUST_PROXY` | `0` | `1` only behind a trusted reverse proxy: rate-limit by `X-Forwarded-For` |
+| `NARRAI_HTTPS` | `0` | `1` adds `Strict-Transport-Security` (set when served over https) |
 | `NARRAI_DEMO_MODE` | `0` | `1` enables the demo sign-in screen (seeded `demo-*` customers only) and the demo brand list |
 | `NARRAI_SEED_DEMO` | `0` | Docker only: `1` loads demo customers on start (Compose sets it) |
 | `NARRAI_LLM_PROVIDER` | `ollama` | `ollama` (local, data stays on the machine) or `openai_compatible` (vLLM, EU-hosted APIs, Azure OpenAI…) |
@@ -104,6 +107,11 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 | `GET /api/dashboard?month=YYYY-MM` | Verified facts, account summary, transactions and chart data (fast, no LLM) |
 | `GET /api/story?month=YYYY-MM` | Four-part narrative with per-sentence source |
 | `POST /api/sessions` | **Bank backend** (`X-NarrAI-API-Key`) gets a session token for one of its customers |
+| `POST /api/sessions/current/revoke` | Customer signs out: the token stops working immediately |
+| `POST /api/customers/{ref}/sessions/revoke-all` | **Bank**: sign a customer out everywhere |
+| `GET /api/me/export` | Customer downloads everything stored about them (JSON) |
+| `GET /api/customers/{ref}/export`, `DELETE /api/customers/{ref}` | **Bank**: GDPR access and erasure requests |
+| `GET /api/audit?customer_ref=` | **Bank**: its audit trail (no personal data) |
 | `GET /api/demo/customers`, `POST /api/demo/sessions` | Demo sign-in (only when `NARRAI_DEMO_MODE=1`, only `demo-*` customers) |
 | `POST /api/chat` | Answer a customer question from verified numbers |
 | `GET /api/chat/suggestions` | Example questions for the chat UI |
@@ -187,6 +195,19 @@ Every result records the rule that decided it (e.g. `rule:KINO`), so a bank can 
 **Accuracy:** 60 / 60 on a labelled set of realistic German statement lines (`tests/test_categorisation.py`). Those
 lines were written alongside the rules, so this shows the rules work as designed, not accuracy on unseen data; a pilot
 should measure it on anonymised real statements.
+
+## Security and GDPR
+
+| Control | What it does |
+|---|---|
+| **Session revocation** | Sign-out revokes the token server-side; banks can sign a customer out everywhere (tokens carry a per-customer session generation, so there is no clock-resolution gap) |
+| **Rate limits** | Session creation 10/min, failed authentication 20/min per client (guessing, credential stuffing), chat 20/min per customer (model cost), uploads 30/min per bank, exports 5/min; `429` with `Retry-After`. In-memory per process: several API replicas need a shared store (e.g. Redis) |
+| **Audit log** | Append-only `audit_events`: sessions, sign-outs, budget changes, imports, provisioning, exports, erasure, API-key and retention operations. Identifiers and counts only (no names, amounts, IBANs or IP addresses), with the request id. `python -m manage audit --bank …` or `GET /api/audit` |
+| **API headers** | `Cache-Control: no-store` on all financial data, `nosniff`, `X-Frame-Options: DENY`, `CSP default-src 'none'`, `Referrer-Policy: no-referrer`, request ids (`X-Request-ID`), HSTS when `NARRAI_HTTPS=1` |
+| **Web app headers** | `proxy.ts` sets a per-request nonce CSP: only Next's own scripts run (`strict-dynamic`, no `unsafe-eval` in production); the API is the only other origin; framing denied. Styles allow inline attributes because the chart library needs them |
+| **GDPR access / portability** | Customers download their data ("My data"); banks export it for access requests |
+| **GDPR erasure** | `DELETE /api/customers/{ref}` removes the customer, accounts, transactions and budgets, ends their sessions and clears cached stories; the audit trail keeps only the pseudonymous id to stay accountable |
+| **Retention** | `python -m manage purge --bank kestrel --months 24` deletes older transactions and expired sign-out records |
 
 ## Data model
 
