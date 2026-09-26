@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 import ai.storyteller as storyteller
+import main
 from main import app
 
 client = TestClient(app)
@@ -65,3 +66,28 @@ def test_dashboard_has_account_and_transactions():
     assert body["account"]["spending"] == body["facts"]["totals"]["current"]
     assert body["transactions"][0]["amount"] == 2850.0  # salary on the 31st is newest
     assert all(t["amount"] < 0 for t in body["transactions"] if t["category"] != "Income")
+
+
+def test_warm_up_prepares_stories_and_reports_progress(monkeypatch, isolated_budget_store):
+    import warmup
+
+    monkeypatch.setattr(storyteller, "_story_cache", {})
+    monkeypatch.setattr(storyteller, "_ask_llm", lambda facts: {})  # model reachable, empty drafts
+    warmup.warm_up(lambda: main.load_transactions(main.DATA_FILE), isolated_budget_store, "demo-customer")
+
+    assert warmup.state["status"] == "ready"
+    assert warmup.state["stories_ready"] == warmup.state["stories_total"] > 0
+    assert client.get("/api/health").json()["warmup"]["status"] == "ready"
+
+
+def test_warm_up_failure_is_reported_not_raised(monkeypatch, isolated_budget_store):
+    import warmup
+
+    def offline(_facts):
+        raise ConnectionError("down")
+
+    monkeypatch.setattr(storyteller, "_story_cache", {})
+    monkeypatch.setattr(storyteller, "_ask_llm", offline)
+    warmup.warm_up(lambda: main.load_transactions(main.DATA_FILE), isolated_budget_store, "demo-customer")
+    assert warmup.state["status"] == "failed"
+    assert "not reachable" in warmup.state["error"]

@@ -48,6 +48,9 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 | `OLLAMA_HOST` | `http://127.0.0.1:11434` | Ollama server |
 | `NARRAI_LLM_BASE_URL` / `NARRAI_LLM_API_KEY` | – | Endpoint and key for `openai_compatible` |
 | `NARRAI_LLM_TIMEOUT` | `120` | Seconds before falling back to templates |
+| `NARRAI_OLLAMA_KEEP_ALIVE` | `30m` | How long Ollama keeps the model loaded between requests (avoids ~60s cold starts) |
+| `NARRAI_WARMUP` | `1` | Load the model and pre-write each bank's latest stories at startup (`0` to disable) |
+| `NARRAI_DB_PATH` | `backend/data/narrai.db` | SQLite file for budgets |
 | `NARRAI_FRONTEND_ORIGINS` | `http://localhost:3000,...` | CORS origins |
 | `NEXT_PUBLIC_API_URL` | `http://127.0.0.1:8000` | API URL used by the frontend |
 
@@ -55,6 +58,7 @@ Open http://localhost:3000. The first story for a month takes a few seconds (loc
 
 | Endpoint | Returns |
 |---|---|
+| `GET /api/health` | Liveness and startup warm-up progress (`idle`, `running`, `ready`, `failed`) |
 | `GET /api/months` | Months that have a previous month to compare with |
 | `GET /api/dashboard?month=YYYY-MM` | Verified facts, account summary, transactions and chart data (fast, no LLM) |
 | `GET /api/story?month=YYYY-MM` | Four-part narrative with per-sentence source |
@@ -121,6 +125,16 @@ Reports are written to `backend/evals/reports/` as JSON and Markdown.
 The guardrails check every AI sentence for: numbers not in the verified facts, speculative or
 causal language, missing key entities (category, top merchant), and **wrong direction**
 (e.g. "€17.66, down from €16.32", or "went up" when spending fell).
+
+## Accessibility and resilience
+
+- Text colours meet WCAG AA contrast (4.5:1), and bank themes are validated for it on load.
+- Status is never colour-only (icon + label); charts have text descriptions and a table view.
+- Visible keyboard focus in the bank's colour, a "Skip to main content" link, and the chat panel closes
+  with Escape and returns focus to its launcher. Animations respect "reduce motion".
+- Layout works from 375px phones upward with no sideways scrolling.
+- Loading shows a skeleton of the page; failures show a clear message with "Try again" (the story can be
+  retried on its own without reloading the numbers).
 
 ## Tests
 

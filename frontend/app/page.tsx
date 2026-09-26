@@ -10,6 +10,7 @@ import { BreakdownChart } from "./components/BreakdownChart";
 import { InsightFeed } from "./components/InsightFeed";
 import { KpiTiles } from "./components/KpiTiles";
 import { NextSteps } from "./components/NextSteps";
+import { ErrorState, LoadingSkeleton } from "./components/StateScreens";
 import { SpendingChart } from "./components/SpendingChart";
 import { StoryCard } from "./components/StoryCard";
 import { TransactionsList } from "./components/TransactionsList";
@@ -64,8 +65,16 @@ function Shell({
 }) {
   return (
     <>
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-sm focus:bg-surface focus:px-4 focus:py-2 focus:text-ink focus:shadow"
+      >
+        Skip to main content
+      </a>
       {header}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
+        {children}
+      </main>
       <footer className="border-t border-border bg-surface">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-5 text-xs text-ink-3 sm:px-6">
           {footer}
@@ -83,6 +92,9 @@ export default function Home() {
 
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bumped by "Try again" to re-run the loaders.
+  const [attempt, setAttempt] = useState(0);
+  const [storyAttempt, setStoryAttempt] = useState(0);
 
   const [storyResult, setStoryResult] = useState<Story | null>(null);
   const [storyErrorMonth, setStoryErrorMonth] = useState<string | null>(null);
@@ -115,8 +127,11 @@ export default function Home() {
         setMonths(months);
         setMonth(latest);
       })
-      .catch(() => setError("Could not reach the NarrAI API. Is the backend running on port 8000?"));
-  }, []);
+      .catch((err) => {
+        console.warn("Could not reach the NarrAI API (is the backend running on port 8000?)", err);
+        setError("The banking service didn't respond. Please check your connection and try again.");
+      });
+  }, [attempt]);
 
   // Facts load fast; the AI story loads separately so charts never wait for the LLM.
   useEffect(() => {
@@ -129,22 +144,38 @@ export default function Home() {
         setDashboard(data);
         setFocus({ month: data.facts.month, category: data.facts.headline.category });
       })
-      .catch(() => !cancelled && setError("Could not load your financial data."));
+      .catch(() => !cancelled && setError("Your account data couldn't be loaded."));
 
     fetchBudgets(month)
       .then((data) => !cancelled && setBudgets(data))
       .catch(() => !cancelled && setBudgetError("Budgets could not be loaded."));
 
-    if (storyEnabled) {
-      fetchStory(month)
-        .then((data) => !cancelled && setStoryResult(data))
-        .catch(() => !cancelled && setStoryErrorMonth(month));
-    }
-
     return () => {
       cancelled = true;
     };
-  }, [month, storyEnabled]);
+  }, [month, attempt]);
+
+  // The story has its own loader so it can be retried without reloading the page.
+  useEffect(() => {
+    if (!month || !storyEnabled) return;
+    let cancelled = false;
+    fetchStory(month)
+      .then((data) => !cancelled && setStoryResult(data))
+      .catch(() => !cancelled && setStoryErrorMonth(month));
+    return () => {
+      cancelled = true;
+    };
+  }, [month, storyEnabled, storyAttempt]);
+
+  function retry() {
+    setError(null);
+    setAttempt((n) => n + 1);
+  }
+
+  function retryStory() {
+    setStoryErrorMonth(null);
+    setStoryAttempt((n) => n + 1);
+  }
 
   // Save or remove a budget, then refresh the dashboard so the insight feed reflects it.
   async function changeBudget(action: () => Promise<Budgets>) {
@@ -164,7 +195,7 @@ export default function Home() {
   if (error) {
     return (
       <Shell header={tenant && <AppHeader monthPicker={null} bankName={tenant.bank_name} logo={tenant.logo} />}>
-        <p className="text-warning">{error}</p>
+        <ErrorState message={error} onRetry={retry} />
       </Shell>
     );
   }
@@ -172,7 +203,7 @@ export default function Home() {
   if (!dashboard || !month || !focus || !tenant) {
     return (
       <Shell header={tenant && <AppHeader monthPicker={null} bankName={tenant.bank_name} logo={tenant.logo} />}>
-        <p className="text-ink-3">Loading your finances…</p>
+        <LoadingSkeleton />
       </Shell>
     );
   }
@@ -191,7 +222,7 @@ export default function Home() {
       value={month}
       onChange={(event) => setMonth(event.target.value)}
       aria-label="Statement month"
-      className="rounded-sm border border-white/30 bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/15"
+      className="rounded-sm border border-on-brand/30 bg-on-brand/10 px-3 py-1.5 text-sm text-on-brand hover:bg-on-brand/15"
     >
       {months.map((m) => (
         <option key={m} value={m} className="text-ink">
@@ -224,6 +255,7 @@ export default function Home() {
             error={storyError}
             monthLabel={facts.month_label}
             assistantName={tenant.assistant_name}
+            onRetry={retryStory}
           />
         )}
 

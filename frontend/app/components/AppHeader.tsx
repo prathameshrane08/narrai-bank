@@ -27,21 +27,26 @@ export function AppHeader({
           <span className="whitespace-nowrap text-lg font-semibold tracking-tight">{bankName}</span>
         </a>
 
-        <nav className="flex items-center gap-6 text-sm text-on-brand/80 max-md:[display:none]">
-          {NAV.map((item) => (
-            <a key={item.href} href={item.href} className="py-5 hover:text-on-brand">
-              {item.label}
-            </a>
-          ))}
-        </nav>
+        {/* Show/hide lives on a plain wrapper so it can't be overridden by anything targeting .flex. */}
+        <div className="max-md:[display:none]">
+          <nav className="flex items-center gap-6 text-sm text-on-brand/80" aria-label="Sections">
+            {NAV.map((item) => (
+              <a key={item.href} href={item.href} className="py-5 hover:text-on-brand">
+                {item.label}
+              </a>
+            ))}
+          </nav>
+        </div>
 
         <div className="ml-auto flex items-center gap-4">
           {monthPicker}
-          <span
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-on-brand/15 text-sm font-medium max-sm:[display:none]"
-            title="Demo customer"
-          >
-            DC
+          <span className="max-sm:[display:none]">
+            <span
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-on-brand/15 text-sm font-medium"
+              title="Demo customer"
+            >
+              DC
+            </span>
           </span>
         </div>
       </div>

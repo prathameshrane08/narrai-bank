@@ -59,7 +59,7 @@ export function InsightFeed({
                     onClick={() => onExplore(insight)}
                     className="mt-auto self-start text-sm font-medium text-brand hover:underline"
                   >
-                    Explore {insight.category.toLowerCase()} →
+                    Explore {insight.category.toLowerCase()} <span aria-hidden>→</span>
                   </button>
                 )}
               </li>

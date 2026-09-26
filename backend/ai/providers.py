@@ -40,6 +40,8 @@ class OllamaProvider:
     host: str
     timeout: float
     temperature: float = 0.2
+    # Keep the model in memory between requests; Ollama's default (5 min) causes ~60s cold starts.
+    keep_alive: str = "30m"
     name: str = "ollama"
 
     def complete_json(self, prompt: str) -> dict:
@@ -51,6 +53,7 @@ class OllamaProvider:
             messages=[{"role": "user", "content": prompt}],
             format="json",
             options={"temperature": self.temperature},
+            keep_alive=self.keep_alive,
         )
         return _parse_json_object(response["message"]["content"])
 
@@ -87,6 +90,7 @@ def get_provider() -> LLMProvider:
             model=os.getenv("NARRAI_MODEL", "llama3.2:3b"),
             host=os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434"),
             timeout=timeout,
+            keep_alive=os.getenv("NARRAI_OLLAMA_KEEP_ALIVE", "30m"),
         )
 
     if provider == "openai_compatible":

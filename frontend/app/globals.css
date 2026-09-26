@@ -9,7 +9,7 @@
   --border: #dde2ea;
   --ink: #0b1b36;
   --ink-2: #3f4c63;
-  --ink-3: #6b778c;
+  --ink-3: #5f6b80; /* 4.9:1 on the page background (WCAG AA) */
   --grid: #edf0f4;
 
   --brand: #0018a8;
@@ -71,4 +71,22 @@ body {
 .recharts-wrapper :focus:not(:focus-visible),
 .recharts-wrapper:focus:not(:focus-visible) {
   outline: none;
+}
+
+/* Visible keyboard focus everywhere, in the bank's own colour. */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* Respect the operating system's reduced-motion setting. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

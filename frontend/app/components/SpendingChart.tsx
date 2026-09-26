@@ -91,7 +91,11 @@ export function SpendingChart({
           </table>
         </div>
       ) : (
-        <div className="h-80">
+        <div
+          className="h-80"
+          role="img"
+          aria-label={`Stacked bar chart of monthly spending by category from ${formatMonth(data[0]?.month ?? "")} to ${formatMonth(data[data.length - 1]?.month ?? "")}. Use "Show table" for the exact values.`}
+        >
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} barCategoryGap="28%">
               <CartesianGrid vertical={false} stroke="var(--grid)" />

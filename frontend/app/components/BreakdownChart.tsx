@@ -80,7 +80,11 @@ export function BreakdownChart({
             )}
           </ul>
 
-          <div style={{ height: Math.max(160, rows.length * 64) }}>
+          <div
+            style={{ height: Math.max(160, rows.length * 64) }}
+            role="img"
+            aria-label={`Bar chart of ${category.toLowerCase()} spending by merchant; the exact values are listed below.`}
+          >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={rows} layout="vertical" barGap={2} barCategoryGap="24%">
                 <CartesianGrid horizontal={false} stroke="var(--grid)" />

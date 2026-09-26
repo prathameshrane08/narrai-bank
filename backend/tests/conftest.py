@@ -1,4 +1,7 @@
+import os
 from pathlib import Path
+
+os.environ.setdefault("NARRAI_WARMUP", "0")  # never call the real model from tests
 
 import pytest
 

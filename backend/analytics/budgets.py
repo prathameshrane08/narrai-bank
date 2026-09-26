@@ -88,3 +88,12 @@ def budget_suggestions(df: pd.DataFrame, budgets: dict[str, float], month: str) 
         if amount:
             suggestions.append({"category": category, "amount": amount})
     return sorted(suggestions, key=lambda s: -s["amount"])
+
+
+def without_existing_budget_advice(facts: dict, budgets: dict[str, float]) -> dict:
+    """Drop 'set a budget' recommendations for categories that already have one."""
+    if budgets:
+        facts["recommendations"] = [
+            r for r in facts["recommendations"] if not (r["type"] == "budget" and r.get("category") in budgets)
+        ]
+    return facts

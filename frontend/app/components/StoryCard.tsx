@@ -34,12 +34,14 @@ export function StoryCard({
   error,
   monthLabel,
   assistantName,
+  onRetry,
 }: {
   story: Story | null;
   loading: boolean;
   error: string | null;
   monthLabel: string;
   assistantName: string;
+  onRetry: () => void;
 }) {
   return (
     <section id="insights" className="scroll-mt-24 rounded border border-border border-l-4 border-l-brand bg-surface">
@@ -60,7 +62,14 @@ export function StoryCard({
         )}
       </div>
 
-      {error && <p className="px-6 pt-4 text-sm text-warning">{error}</p>}
+      {error && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 px-5 pt-4 text-sm text-warning sm:px-6">
+          <span>{error} The numbers below are unaffected.</span>
+          <button type="button" onClick={onRetry} className="font-medium text-brand underline">
+            Try again
+          </button>
+        </div>
+      )}
 
       <ol className="grid md:grid-cols-2">
         {QUESTIONS.map(({ key, question }, index) => {
@@ -77,7 +86,9 @@ export function StoryCard({
                 <h3 className="text-sm font-semibold text-ink">{question}</h3>
                 {section && <SourceBadge source={section.source} issues={section.issues} />}
               </div>
-              {loading || !section ? (
+              {error && !section ? (
+                <p className="mt-2 text-sm text-ink-3">Not available right now.</p>
+              ) : loading || !section ? (
                 <div className="mt-3 space-y-2" aria-label="Writing story">
                   <div className="h-3 w-full animate-pulse rounded-sm bg-ink-3/15" />
                   <div className="h-3 w-2/3 animate-pulse rounded-sm bg-ink-3/15" />

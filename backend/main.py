@@ -4,6 +4,7 @@ Transactions -> pandas analytics -> verified facts -> LLM narration -> dashboard
 """
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -12,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from ai.assistant import SUGGESTIONS, answer_question
 from ai.storyteller import generate_story, model_name
-from analytics.budgets import budget_progress, budget_suggestions
+from analytics.budgets import budget_progress, budget_suggestions, without_existing_budget_advice
 from analytics.feed import build_insight_feed
 from analytics.insights import build_facts, comparable_months
 from analytics.spending import (
@@ -23,6 +24,7 @@ from analytics.spending import (
     monthly_spending_by_category,
     spending_only,
 )
+import warmup
 from storage import BudgetStore
 from tenants import Tenant, get_tenant, load_tenants
 
@@ -31,7 +33,17 @@ DATA_FILE = Path(os.getenv("NARRAI_DATA_FILE", Path(__file__).parent / "data" / 
 OPENING_BALANCE = float(os.getenv("NARRAI_OPENING_BALANCE", "1840.00"))
 FRONTEND_ORIGINS = os.getenv("NARRAI_FRONTEND_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    if os.getenv("NARRAI_WARMUP", "1") == "1":
+        warmup.start_in_background(_load, budget_store(), DEMO_CUSTOMER)
+    else:
+        warmup.state["status"] = "disabled"
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="NarrAI Bank API",
     description="AI-powered financial data storytelling. Code calculates, AI narrates.",
     version="0.2.0",
@@ -86,16 +98,18 @@ def _facts_or_404(month: str | None, budgets: dict[str, float] | None = None) ->
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     # Don't suggest a budget the customer already has; the story then narrates the next suggestion.
-    if budgets:
-        facts["recommendations"] = [
-            r for r in facts["recommendations"] if not (r["type"] == "budget" and r.get("category") in budgets)
-        ]
-    return facts
+    return without_existing_budget_advice(facts, budgets or {})
 
 
 @app.get("/")
-def health():
+def root():
     return {"status": "ok", "message": "NarrAI Bank API is running", "model": model_name()}
+
+
+@app.get("/api/health")
+def health():
+    """Liveness plus warm-up progress (the model and recent stories are prepared at startup)."""
+    return {"status": "ok", "model": model_name(), "warmup": warmup.state}
 
 
 @app.get("/api/tenant")

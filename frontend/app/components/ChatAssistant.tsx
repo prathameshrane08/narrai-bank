@@ -70,6 +70,8 @@ export function ChatAssistant({ month, assistantName }: { month: string; assista
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
 
   useEffect(() => {
     if (!open || suggestions.length) return;
@@ -82,8 +84,18 @@ export function ChatAssistant({ month, assistantName }: { month: string; assista
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
+  // Focus the question box on open; hand focus back to the launcher on close.
   useEffect(() => {
     if (open) inputRef.current?.focus();
+    else if (wasOpen.current) launcherRef.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
   async function ask(question: string) {
@@ -116,11 +128,16 @@ export function ChatAssistant({ month, assistantName }: { month: string; assista
     <>
       {!open && (
         <button
+          ref={launcherRef}
           type="button"
           onClick={() => setOpen(true)}
+          aria-haspopup="dialog"
           className="fixed right-4 bottom-4 z-30 flex items-center gap-2 rounded-full bg-brand px-5 py-3 text-sm font-semibold text-on-brand shadow-lg hover:bg-brand-dark sm:right-6 sm:bottom-6"
         >
-          <span className="flex h-6 w-6 items-center justify-center rounded-sm bg-on-brand text-[11px] font-bold text-brand">
+          <span
+            className="flex h-6 w-6 items-center justify-center rounded-sm bg-on-brand text-[11px] font-bold text-brand"
+            aria-hidden
+          >
             AI
           </span>
           Ask about my money
@@ -129,12 +146,15 @@ export function ChatAssistant({ month, assistantName }: { month: string; assista
 
       {open && (
         <aside
+          role="dialog"
+          aria-labelledby="chat-title"
           className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-background shadow-2xl sm:w-[420px]"
-          aria-label="Ask about my money"
         >
           <header className="flex items-center justify-between bg-brand px-5 py-4 text-on-brand">
             <div>
-              <p className="font-semibold">Ask about my money · {assistantName}</p>
+              <h2 id="chat-title" className="font-semibold">
+                Ask about my money · {assistantName}
+              </h2>
               <p className="text-xs text-on-brand/70">
                 Answers use your {formatMonth(month)} data. Numbers are calculated, never guessed.
               </p>
@@ -143,7 +163,7 @@ export function ChatAssistant({ month, assistantName }: { month: string; assista
               type="button"
               onClick={() => setOpen(false)}
               className="rounded-sm px-2 py-1 text-xl leading-none text-on-brand/80 hover:bg-on-brand/10 hover:text-on-brand"
-              aria-label="Close"
+              aria-label="Close (Esc)"
             >
               ×
             </button>
