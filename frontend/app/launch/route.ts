@@ -5,11 +5,11 @@ import { API_URL, clearSession, webAppSecretHeader, writeSession } from "../lib/
 /**
  * The bank app opens /launch?code=… after signing its customer in. The code is exchanged server-side
  * (with the web app's client secret) for a session, stored in an httpOnly cookie, and the customer is
- * redirected to "/", which also removes the code from the address bar and browser history.
+ * redirected to /app, which also removes the code from the address bar and browser history.
  */
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code") ?? "";
-  const home = new URL("/", request.nextUrl.origin);
+  const home = new URL("/app", request.nextUrl.origin);
 
   if (code.length < 20 || code.length > 100) {
     home.searchParams.set("launch", "invalid");

@@ -142,7 +142,7 @@ What happens next:
 bank app ──opens──► https://insights.bank.de/launch?code=…
                       web app server ──code + client secret──► POST /api/launch-codes/exchange
                                      ◄── session (30 min)
-                      sets an httpOnly, Secure, SameSite=Lax cookie, redirects to "/" (code leaves the URL)
+                      sets an httpOnly, Secure, SameSite=Lax cookie, redirects to /app (code leaves the URL)
 browser  ──same-site calls──► web app server ──Authorization: Bearer──► NarrAI API
 ```
 

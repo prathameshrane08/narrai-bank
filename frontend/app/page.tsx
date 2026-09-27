@@ -1,419 +1,245 @@
-"use client";
+import type { Metadata } from "next";
+import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import Link from "next/link";
 
-import { useCallback, useEffect, useState } from "react";
+import { StatementStory } from "./components/landing/StatementStory";
+import styles from "./landing.module.css";
 
-import { AccountOverview } from "./components/AccountOverview";
-import { AppHeader } from "./components/AppHeader";
-import { ChatAssistant } from "./components/ChatAssistant";
-import { BudgetsPanel } from "./components/BudgetsPanel";
-import { BreakdownChart } from "./components/BreakdownChart";
-import { InsightFeed } from "./components/InsightFeed";
-import { KpiTiles } from "./components/KpiTiles";
-import { NextSteps } from "./components/NextSteps";
-import { SignIn } from "./components/SignIn";
-import { ErrorState, LoadingSkeleton } from "./components/StateScreens";
-import { SpendingChart } from "./components/SpendingChart";
-import { StoryCard } from "./components/StoryCard";
-import { TransactionsList } from "./components/TransactionsList";
-import {
-  type Budgets,
-  type Dashboard,
-  type Session,
-  type Story,
-  type Tenant,
-  SignedOutError,
-  fetchBudgets,
-  fetchDashboard,
-  fetchMonths,
-  fetchStory,
-  fetchTenant,
-  fetchTenants,
-  removeBudget,
-  fetchSession,
-  downloadMyData,
-  saveBudget,
-  setTenantId,
-  signOut,
-} from "./lib/api";
-import { formatMonth, formatMonthLong } from "./lib/format";
-import { applyTenantTheme, tenantFromUrl } from "./lib/theme";
+const plexSans = IBM_Plex_Sans({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-plex-sans" });
+const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400"], variable: "--font-plex-mono" });
 
-function BrandSwitcher({ tenant, tenants }: { tenant: Tenant; tenants: { id: string; bank_name: string }[] }) {
-  // A session belongs to one bank, so switching the demo brand signs out first.
-  if (tenants.length < 2) return null;
+export const metadata: Metadata = {
+  title: "NarrAI for banks",
+  description:
+    "Plain-language explanations of a customer's money for banking apps. Numbers are calculated; the AI only puts them into words, and a guardrail checks every sentence.",
+};
+
+const CONTACT = process.env.NEXT_PUBLIC_CONTACT_EMAIL;
+
+const QUESTIONS = [
+  { question: "What happened?", answer: "Restaurant spending went up 196% to €149.50." },
+  { question: "Why?", answer: "L'Osteria added the most: €47.50 more than in July." },
+  { question: "What does it mean?", answer: "All of it was spent on weekends." },
+  { question: "What can I do?", answer: "A €50 monthly budget matches your usual spending; it would have saved €99.50." },
+];
+
+const STEPS = [
+  {
+    title: "Statements come in",
+    text: "The bank sends camt.053, MT940 or CSV statements. Messy text such as “PAYPAL *ZALANDO 1043//BERLIN” becomes Zalando, Shopping.",
+  },
+  {
+    title: "Analytics calculate",
+    text: "Totals, changes, patterns, unusual payments and budget suggestions are computed in code. No model is involved.",
+  },
+  {
+    title: "The model writes",
+    text: "A language model running on the bank's own servers turns the verified facts into short sentences.",
+  },
+  {
+    title: "The guardrail checks",
+    text: "Every number, direction and topic in a sentence must match the facts. Anything that doesn't is replaced.",
+  },
+  {
+    title: "The customer reads it",
+    text: "Each sentence is marked as written by the AI and verified, or as a fixed sentence built from the facts.",
+  },
+];
+
+const EVIDENCE = [
+  { check: "Unverified numbers shown to customers", result: "0", detail: "in 216 story sentences and 30 chat answers" },
+  {
+    check: "Story sentences correct on a line-by-line review",
+    result: "214 of 216",
+    detail: "the 2 wrong ones are now caught by an added check",
+  },
+  { check: "Chat questions routed to the right calculation", result: "30 of 30", detail: "labelled test questions" },
+  { check: "Investment, credit and off-topic questions declined", result: "6 of 6", detail: "before any model runs" },
+  { check: "Statement lines categorised correctly", result: "60 of 60", detail: "labelled German statement lines" },
+];
+
+const BRANDS = [
+  { id: "kestrel", name: "Kestrel Bank", colour: "#0b6e4f" },
+  { id: "aurelia", name: "Aurelia Privatbank", colour: "#6b2d8c" },
+  { id: "narrai", name: "NarrAI Bank", colour: "#0018a8" },
+];
+
+export default function Landing() {
   return (
-    <label className="flex items-center gap-2">
-      Demo brand
-      <select
-        value={tenant.id}
-        onChange={(event) => {
-          const target = event.target.value;
-          void signOut().then(() => {
-            window.location.search = `?bank=${target}`;
-          });
-        }}
-        className="rounded-sm border border-border bg-surface px-2 py-1 text-ink"
-      >
-        {tenants.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.bank_name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function Shell({
-  children,
-  header,
-  footer,
-}: {
-  children: React.ReactNode;
-  header?: React.ReactNode;
-  footer?: React.ReactNode;
-}) {
-  return (
-    <>
-      <a
-        href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-sm focus:bg-surface focus:px-4 focus:py-2 focus:text-ink focus:shadow"
-      >
-        Skip to main content
+    <div className={`${styles.page} ${plexSans.variable} ${plexMono.variable}`}>
+      <a href="#main" className={styles.skip}>
+        Skip to content
       </a>
-      {header}
-      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
-        {children}
-      </main>
-      <footer className="border-t border-border bg-surface">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-5 text-xs text-ink-3 sm:px-6">
-          {footer}
-        </div>
-      </footer>
-    </>
-  );
-}
 
-export default function Home() {
-  const [tenant, setTenant] = useState<Tenant | null>(null);
-  const [tenants, setTenants] = useState<{ id: string; bank_name: string }[]>([]);
-  const [months, setMonths] = useState<string[]>([]);
-  // Months that have a previous month to compare with; only these get a story and insights.
-  const [comparable, setComparable] = useState<string[]>([]);
-  const [month, setMonth] = useState<string | null>(null);
+      <header className={styles.header}>
+        <span className={styles.wordmark}>NarrAI</span>
+        <nav aria-label="Sections" className={styles.nav}>
+          <a href="#how">How it works</a>
+          <a href="#evidence">Evidence</a>
+          <a href="#banks">For banks</a>
+        </nav>
+        <Link href="/app" className={styles.buttonSmall}>
+          Open the live demo
+        </Link>
+      </header>
 
-  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // Bumped by "Try again" to re-run the loaders.
-  const [attempt, setAttempt] = useState(0);
-  // undefined = not checked yet; null = signed out.
-  const [session, setSession] = useState<Session | null | undefined>(undefined);
-  const [signInNotice, setSignInNotice] = useState<string | null>(null);
-  const [storyAttempt, setStoryAttempt] = useState(0);
-
-  const [storyResult, setStoryResult] = useState<Story | null>(null);
-  const [storyErrorMonth, setStoryErrorMonth] = useState<string | null>(null);
-
-  const [budgets, setBudgets] = useState<Budgets | null>(null);
-  const [budgetBusy, setBudgetBusy] = useState(false);
-  const [budgetError, setBudgetError] = useState<string | null>(null);
-
-  const storyEnabled = tenant?.features.story !== false;
-
-  // Drill-down selection: which bar segment the user is exploring.
-  const [focus, setFocus] = useState<{ month: string; category: string } | null>(null);
-
-  // Clear everything that belongs to the signed-in customer.
-  const endSession = useCallback((notice: string | null) => {
-    void signOut();
-    setSession(null);
-    setSignInNotice(notice);
-    setMonth(null);
-    setMonths([]);
-    setDashboard(null);
-    setBudgets(null);
-    setStoryResult(null);
-    setFocus(null);
-  }, []);
-
-  const handleFailure = useCallback(
-    (err: unknown, message = "The banking service didn't respond. Please try again.") => {
-      if (err instanceof SignedOutError) endSession(err.message);
-      else setError(message);
-    },
-    [endSession],
-  );
-
-  // A signed-in customer's bank decides the branding; otherwise ?bank= (demo) or the default.
-  useEffect(() => {
-    async function load() {
-      const current = await fetchSession();
-      const requested = tenantFromUrl();
-      setTenantId(current?.tenant ?? requested ?? process.env.NEXT_PUBLIC_TENANT ?? "narrai");
-
-      fetchTenants()
-        .then((data) => setTenants(data.tenants))
-        .catch(() => setTenants([]));
-
-      const config = await fetchTenant();
-      applyTenantTheme(config);
-      setTenant(config);
-      setSession(current);
-      const launch = new URLSearchParams(window.location.search).get("launch");
-      if (!current && launch) {
-        setSignInNotice(
-          `This link has expired or was already used. Please open ${config.assistant_name} again from your banking app.`,
-        );
-      }
-    }
-    load().catch((err) => {
-      console.warn("Could not reach the NarrAI API (is the backend running on port 8000?)", err);
-      setError("The banking service didn't respond. Please check your connection and try again.");
-    });
-  }, [attempt]);
-
-  // Once signed in, find which months this customer has data for.
-  useEffect(() => {
-    if (!session) return;
-    fetchMonths()
-      .then(({ months, comparable, latest }) => {
-        setMonths(months);
-        setComparable(comparable);
-        setMonth(latest);
-      })
-      .catch((err) => handleFailure(err));
-  }, [session, attempt, handleFailure]);
-
-  // Facts load fast; the AI story loads separately so charts never wait for the LLM.
-  useEffect(() => {
-    if (!month) return;
-    let cancelled = false;
-
-    fetchDashboard(month)
-      .then((data) => {
-        if (cancelled) return;
-        setDashboard(data);
-        setFocus({ month: data.month, category: data.facts?.headline.category ?? data.categories[0] ?? "" });
-      })
-      .catch((err) => !cancelled && handleFailure(err, "Your account data couldn't be loaded."));
-
-    fetchBudgets(month)
-      .then((data) => !cancelled && setBudgets(data))
-      .catch((err) =>
-        !cancelled && (err instanceof SignedOutError ? handleFailure(err) : setBudgetError("Budgets could not be loaded.")),
-      );
-
-    return () => {
-      cancelled = true;
-    };
-  }, [month, attempt, handleFailure]);
-
-  // The story has its own loader so it can be retried without reloading the page.
-  useEffect(() => {
-    if (!month || !storyEnabled || !comparable.includes(month)) return;
-    let cancelled = false;
-    fetchStory(month)
-      .then((data) => !cancelled && setStoryResult(data))
-      .catch(() => !cancelled && setStoryErrorMonth(month));
-    return () => {
-      cancelled = true;
-    };
-  }, [month, storyEnabled, storyAttempt, comparable]);
-
-  function retry() {
-    setError(null);
-    setAttempt((n) => n + 1);
-  }
-
-  function onSignedIn(value: Session) {
-    setSignInNotice(null);
-    setSession(value);
-  }
-
-  function retryStory() {
-    setStoryErrorMonth(null);
-    setStoryAttempt((n) => n + 1);
-  }
-
-  // Save or remove a budget, then refresh the dashboard so the insight feed reflects it.
-  async function changeBudget(action: () => Promise<Budgets>) {
-    if (!month) return;
-    setBudgetBusy(true);
-    setBudgetError(null);
-    try {
-      setBudgets(await action());
-      setDashboard(await fetchDashboard(month));
-    } catch (err) {
-      if (err instanceof SignedOutError) endSession(err.message);
-      else setBudgetError("That budget change could not be saved. Please try again.");
-    } finally {
-      setBudgetBusy(false);
-    }
-  }
-
-  if (error) {
-    return (
-      <Shell header={tenant && <AppHeader monthPicker={null} bankName={tenant.bank_name} logo={tenant.logo} />}>
-        <ErrorState message={error} onRetry={retry} />
-      </Shell>
-    );
-  }
-
-  if (tenant && session === null) {
-    return (
-      <Shell
-        header={<AppHeader monthPicker={null} bankName={tenant.bank_name} logo={tenant.logo} />}
-        footer={
-          <>
-            <span>{tenant.legal_footer}</span>
-            <BrandSwitcher tenant={tenant} tenants={tenants} />
-          </>
-        }
-      >
-        <SignIn tenant={tenant} notice={signInNotice} onSignedIn={onSignedIn} />
-      </Shell>
-    );
-  }
-
-  if (!dashboard || !month || !focus || !tenant || !session) {
-    return (
-      <Shell header={tenant && <AppHeader monthPicker={null} bankName={tenant.bank_name} logo={tenant.logo} />}>
-        <LoadingSkeleton />
-      </Shell>
-    );
-  }
-
-  const { facts } = dashboard;
-  const monthLabel = facts?.month_label ?? formatMonthLong(month);
-  // Only show a story (or its error) that belongs to the selected month.
-  const story = storyResult?.month === month ? storyResult : null;
-  const storyError = storyErrorMonth === month ? "The story could not be generated right now." : null;
-  const monthIndex = dashboard.monthly_spending.findIndex((row) => row.month === focus.month);
-  const focusPrevious = monthIndex > 0 ? dashboard.monthly_spending[monthIndex - 1].month : null;
-
-  const flagged = new Set((facts?.alerts ?? []).map((alert) => `${alert.date}|${alert.merchant}`));
-
-  const monthPicker = (
-    <select
-      value={month}
-      onChange={(event) => setMonth(event.target.value)}
-      aria-label="Statement month"
-      className="rounded-sm border border-on-brand/30 bg-on-brand/10 px-3 py-1.5 text-sm text-on-brand hover:bg-on-brand/15"
-    >
-      {months.map((m) => (
-        <option key={m} value={m} className="text-ink">
-          {formatMonth(m)}
-        </option>
-      ))}
-    </select>
-  );
-
-  return (
-    <Shell
-      header={
-        <AppHeader
-          monthPicker={monthPicker}
-          bankName={tenant.bank_name}
-          logo={tenant.logo}
-          customerName={session.customerName}
-          onSignOut={() => endSession(null)}
-          onDownloadData={() => downloadMyData().catch((err) => handleFailure(err, "Your data couldn't be downloaded."))}
-        />
-      }
-      footer={
-        <>
-          <span>{tenant.legal_footer}</span>
-          <BrandSwitcher tenant={tenant} tenants={tenants} />
-        </>
-      }
-    >
-      <p className="text-sm text-ink-3">Financial overview</p>
-      <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-ink">{monthLabel}</h1>
-
-      <div className="mt-5 space-y-5">
-        <AccountOverview account={dashboard.account} label={tenant.account_label} />
-
-        {!facts && dashboard.notice && (
-          <p role="status" className="rounded border border-border bg-surface px-5 py-4 text-sm text-ink-2">
-            {dashboard.notice}
-          </p>
-        )}
-
-        {facts && tenant.features.story !== false && (
-          <StoryCard
-            story={story}
-            loading={!story && !storyError}
-            error={storyError}
-            monthLabel={monthLabel}
-            assistantName={tenant.assistant_name}
-            onRetry={retryStory}
-          />
-        )}
-
-        {facts && tenant.features.insights !== false && (
-          <InsightFeed
-            insights={dashboard.insights}
-            monthLabel={monthLabel}
-            onExplore={(insight) => {
-              if (!insight.category) return;
-              setFocus({ month: insight.month, category: insight.category });
-              document.getElementById("spending")?.scrollIntoView({ behavior: "smooth" });
-            }}
-          />
-        )}
-
-        {facts && <KpiTiles facts={facts} />}
-
-        <div id="spending" className="grid scroll-mt-24 gap-5 lg:grid-cols-5">
-          <div className="lg:col-span-3">
-            <SpendingChart
-              data={dashboard.monthly_spending}
-              categories={dashboard.categories}
-              fixedCategories={facts?.fixed_categories ?? []}
-              selectedMonth={focus.month}
-              selectedCategory={focus.category}
-              onSelect={(m, category) => setFocus({ month: m, category })}
-            />
-          </div>
-          <div className="lg:col-span-2">
-            <BreakdownChart
-              breakdown={dashboard.merchant_breakdown}
-              categories={dashboard.categories}
-              category={focus.category}
-              month={focus.month}
-              previousMonth={focusPrevious}
-              onCategoryChange={(category) => setFocus({ ...focus, category })}
-            />
-          </div>
-        </div>
-
-        <BudgetsPanel
-          data={budgets}
-          categories={dashboard.categories}
-          monthLabel={monthLabel}
-          busy={budgetBusy}
-          error={budgetError}
-          onSave={(category, amount) => changeBudget(() => saveBudget(category, amount, month))}
-          onRemove={(category) => changeBudget(() => removeBudget(category, month))}
-        />
-
-        <div className="grid items-start gap-5 lg:grid-cols-5">
-          {facts && (
-            <div className="lg:col-span-2">
-              <NextSteps
-                recommendations={facts.recommendations}
-                budgetedCategories={new Set(budgets?.budgets.map((b) => b.category))}
-                onCreateBudget={(category, amount) => changeBudget(() => saveBudget(category, amount, month))}
-              />
+      <main id="main">
+        <section className={styles.hero} aria-labelledby="hero-title">
+          <div className={styles.heroText}>
+            <h1 id="hero-title">Your customers get the story. Every number stays checkable.</h1>
+            <p className={styles.lead}>
+              NarrAI turns a bank customer&apos;s transactions into short, plain-language explanations of what happened
+              with their money and what to do next. The numbers come from calculations. The language model only puts
+              them into words, and anything it writes that the calculations don&apos;t support is replaced before a
+              customer sees it.
+            </p>
+            <div className={styles.actions}>
+              <Link href="/app" className={styles.button}>
+                Open the live demo
+              </Link>
+              <a href="#how" className={styles.textLink}>
+                See how it works
+              </a>
             </div>
-          )}
-          <div className={facts ? "lg:col-span-3" : "lg:col-span-5"}>
-            <TransactionsList transactions={dashboard.transactions} monthLabel={monthLabel} flagged={flagged} />
           </div>
-        </div>
-      </div>
+          <div className={styles.heroArtifact}>
+            <StatementStory />
+            <p className={styles.hint}>Point at a number, or tab to it, to see where it comes from.</p>
+          </div>
+        </section>
 
-      {tenant.features.chat !== false && <ChatAssistant month={month} assistantName={tenant.assistant_name} />}
-    </Shell>
+        <section className={styles.section} aria-labelledby="questions-title">
+          <h2 id="questions-title">Four questions, answered every month</h2>
+          <p className={styles.sectionLead}>
+            Banking apps show balances, charts and long transaction lists, yet customers still can&apos;t tell what
+            changed. NarrAI answers four questions, in the order people ask them.
+          </p>
+          <ol className={styles.questions}>
+            {QUESTIONS.map((item) => (
+              <li key={item.question}>
+                <h3>{item.question}</h3>
+                <p>{item.answer}</p>
+              </li>
+            ))}
+          </ol>
+          <p className={styles.aside}>
+            Around the story: ranked insights, budgets with progress, alerts for unusual payments, and a chat that
+            answers questions about the customer&apos;s own money.
+          </p>
+        </section>
+
+        <section id="how" className={styles.section} aria-labelledby="how-title">
+          <h2 id="how-title">How a sentence reaches a customer</h2>
+          <div className={styles.howGrid}>
+            <ol className={styles.steps}>
+              {STEPS.map((step) => (
+                <li key={step.title}>
+                  <h3>{step.title}</h3>
+                  <p>{step.text}</p>
+                </li>
+              ))}
+            </ol>
+            <div className={styles.rejected} aria-label="Example of a rejected AI draft">
+              <p className={styles.rejectedLabel}>AI draft</p>
+              <p className={styles.draft}>
+                <del>Your restaurant spending went up 210% to €149.50.</del>
+              </p>
+              <p className={styles.correction}>Rejected: 210% is not in the verified facts.</p>
+              <p className={styles.rejectedLabel}>Shown to the customer instead</p>
+              <p className={styles.shown}>Your restaurant spending increased by 196.0% in August 2026, reaching €149.50.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="evidence" className={styles.section} aria-labelledby="evidence-title">
+          <h2 id="evidence-title">What the evaluation found</h2>
+          <table className={styles.ledger}>
+            <caption className={styles.visuallyHidden}>Evaluation results</caption>
+            <thead>
+              <tr>
+                <th scope="col">Check</th>
+                <th scope="col">Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {EVIDENCE.map((row) => (
+                <tr key={row.check}>
+                  <th scope="row">
+                    {row.check}
+                    <span>{row.detail}</span>
+                  </th>
+                  <td>{row.result}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className={styles.aside}>
+            Measured on synthetic customers with a small open model on a laptop. A pilot repeats the evaluation on the
+            bank&apos;s own anonymised statements before anything reaches a customer.
+          </p>
+        </section>
+
+        <section id="banks" className={styles.section} aria-labelledby="banks-title">
+          <h2 id="banks-title">Built to sit inside a bank</h2>
+          <dl className={styles.facts}>
+            <div>
+              <dt>Your brand</dt>
+              <dd>
+                One configuration file per bank sets the name, logo, colours and wording, checked for readable contrast.
+                Try the same product in three fictional brands:
+                <span className={styles.brands}>
+                  {BRANDS.map((brand) => (
+                    <Link key={brand.id} href={`/app?bank=${brand.id}`} className={styles.brand}>
+                      <span className={styles.swatch} style={{ background: brand.colour }} aria-hidden />
+                      {brand.name}
+                    </Link>
+                  ))}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>Data stays where you decide</dt>
+              <dd>
+                The language model runs on your own servers by default, or on an EU-hosted model you choose. Customers
+                can download their data, and the bank can erase it on request. The audit log keeps no names or amounts.
+              </dd>
+            </div>
+            <div>
+              <dt>Fits your stack</dt>
+              <dd>
+                A REST API with bank keys, statement import for camt.053, MT940 and CSV, and one-time links that open the
+                white-label app with the customer already signed in. Or build the screens yourself on the API.
+              </dd>
+            </div>
+            <div>
+              <dt>Advice stays with your advisers</dt>
+              <dd>
+                Questions about investments, credit or loans are declined by a fixed rule and referred to the
+                bank&apos;s own advisers.
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className={styles.closing} aria-labelledby="closing-title">
+          <h2 id="closing-title">See it with your own clicks</h2>
+          <p>Sign in as a demo customer and ask the chat about their spending. Nothing to install.</p>
+          <div className={styles.actions}>
+            <Link href="/app" className={styles.button}>
+              Open the live demo
+            </Link>
+            {CONTACT && (
+              <a href={`mailto:${CONTACT}`} className={styles.textLink}>
+                Talk to us about a pilot
+              </a>
+            )}
+          </div>
+        </section>
+      </main>
+
+      <footer className={styles.footer}>
+        <p>NarrAI prototype. The demo uses synthetic data, and the banks shown in it are fictional.</p>
+      </footer>
+    </div>
   );
 }

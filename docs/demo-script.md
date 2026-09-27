@@ -15,7 +15,8 @@ ever making up a number, and that it drops into the bank's own app under the ban
       layout classes; a clean profile avoids surprises.
 - [ ] Start with **no budgets** (remove any in the Budgets panel) so you can create one live.
 - [ ] Make sure the API runs with `NARRAI_DEMO_MODE=1` (Docker Compose sets it).
-- [ ] Open http://localhost:3000 at 1440px wide and sign in as **Demo Customer**.
+- [ ] Open the site at 1440px wide. Start on the landing page (`/`) for the one-minute overview, then
+      **Open the live demo** (`/app`) and sign in as **Demo Customer**.
       Have a second tab on `?bank=kestrel`, also signed in.
 - [ ] Close notifications and other apps; the chat answers in ~3–5 seconds on a laptop.
 

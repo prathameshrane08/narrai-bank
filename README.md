@@ -66,6 +66,7 @@ as stateless functions. The Python API, Postgres and the model run elsewhere (Ve
    | `NARRAI_API_URL` | Same, or a private URL the functions can reach |
    | `NARRAI_WEBAPP_SECRET` | The same random secret the API has |
    | `NEXT_PUBLIC_TENANT` | The bank's tenant id (one Vercel project per bank, or a custom domain per bank) |
+   | `NEXT_PUBLIC_CONTACT_EMAIL` | Optional: shows a "Talk to us about a pilot" link on the landing page |
 
 4. On the API: add the Vercel domain (and the bank's custom domain) to `NARRAI_FRONTEND_ORIGINS`, set the bank's
    `app_url` in its tenant config to that domain, and keep `NARRAI_DEMO_MODE=0` for real customers.
@@ -100,7 +101,8 @@ printf 'NARRAI_API_URL=http://127.0.0.1:8000\nNARRAI_WEBAPP_SECRET=%s\n' "$NARRA
 cd frontend && npm install && npm run dev
 ```
 
-Open http://localhost:3000. The first story for a month takes a few seconds (local LLM); it is cached afterwards.
+Open http://localhost:3000: the landing page for banks is at `/`, the product at `/app`. The first story for a
+month takes a few seconds (local LLM); it is cached afterwards.
 
 ### Configuration
 
