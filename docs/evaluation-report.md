@@ -12,15 +12,15 @@ put a number, direction or claim in front of a customer that the analytics didn'
 |---|---|
 | **Unverified numbers shown to customers** | **0** (216 story sentences + 30 chat answers) |
 | Story sentences accepted by the guardrails | 216 / 216 in the automated run |
-| **Story sentences correct on human review** | **214 / 216**; the 2 errors are now caught by a new check (see §2.3) |
+| **Story sentences correct on line-by-line review** | **214 / 216**; the 2 errors are now caught by a new check (see §2.3) |
 | Chat routing accuracy (query, topic, months) | **30 / 30** labelled questions |
-| **Chat answers factually correct on human review** | **24 / 24** answered questions |
+| **Chat answers factually correct on line-by-line review** | **24 / 24** answered questions |
 | Advice / off-topic questions declined | **6 / 6** (investment, crypto, loans are declined *before* any model runs) |
 | Latency, local laptop | story p50 8.6 s (pre-written at startup) · chat p50 3.9 s |
 
 **The honest reading:** the guardrails *guarantee* that no unverified number reaches a customer: that's
 enforced by code, not measured by chance. What they cannot fully guarantee is that every *verified*
-number is used in the right claim. Human review found 2 such errors in 216 story sentences (0.9%),
+number is used in the right claim. A line-by-line review found 2 such errors in 216 story sentences (0.9%),
 both of the same kind; a targeted check now rejects them. In this sample, no further errors remain;
 with 216 sentences, the 95% upper bound on the remaining rate of such errors is about 1.4% (rule of three).
 
@@ -41,7 +41,7 @@ payments. 3 customers per persona, 12 months each; the chat evaluation uses the 
 off-topic) with the expected query, topic and months; checks routing, guardrail acceptance and the
 shown text.
 
-**Human review.** Every one of the 216 story sentences and 30 chat answers was read against its
+**Line-by-line review.** Every one of the 216 story sentences and 30 chat answers was read against its
 verified facts: amounts, directions, which month a figure belongs to, and whether the claim follows.
 
 ## 2. Story results
@@ -56,7 +56,7 @@ verified facts: amounts, directions, which month a figure belongs to, and whethe
 | Provider errors | 0 |
 | Latency p50 / p95 | 8.6 s / 11.5 s |
 
-### 2.2 Human review
+### 2.2 Line-by-line review
 
 - 214 / 216 sentences correct, including all 18 budget suggestions that state a saving
   ("a €X budget would have saved €Y"), each re-calculated by hand.
@@ -80,7 +80,7 @@ rejected** (and replaced by the verified template); all 214 correct sentences ar
 |---|---|
 | Routing accuracy | 30 / 30 |
 | AI answers accepted by the guardrails | 24 / 24 |
-| Factually correct (human review) | 24 / 24 |
+| Factually correct (line-by-line review) | 24 / 24 |
 | Advice / off-topic declined | 6 / 6 |
 | Latency p50 / max | 3.9 s / 5.6 s |
 
@@ -119,8 +119,9 @@ any check), and chat routing from 86.7% to 100%.
   including adversarial phrasing.
 - **One model, one language.** Results are for Llama 3.2 3B in English. Every model change or new
   language (German first) needs its own evaluation run.
-- **Human review is one reviewer.** A production process should have two independent reviewers and
-  track agreement.
+- **One reviewer, once.** The line-by-line review was done once, during development. Before sharing these
+  numbers with a bank, have a person re-check the sentences (every draft and its facts are in the JSON
+  reports), and for production use two independent reviewers and track their agreement.
 - **Guardrails check claims they know about.** New kinds of claims need new checks; the process
   (evaluate → review → add a targeted check → re-run) is what the table in §4 demonstrates.
 
