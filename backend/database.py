@@ -15,7 +15,12 @@ DEFAULT_URL = f"sqlite:///{Path(__file__).parent / 'data' / 'narrai-dev.db'}"
 
 
 def database_url() -> str:
-    return os.getenv("DATABASE_URL", DEFAULT_URL)
+    url = os.getenv("DATABASE_URL", DEFAULT_URL)
+    # Hosting providers hand out postgres:// or postgresql:// URLs; SQLAlchemy needs the driver named.
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
 
 
 def make_engine(url: str | None = None) -> Engine:

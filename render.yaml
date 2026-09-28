@@ -1,0 +1,42 @@
+# Render Blueprint for the public pitch demo: the API on Render's free plan in Frankfurt, data in a
+# free Neon Postgres (EU), narration by Groq's free hosted gpt-oss-120b. Groq runs in the US, which is fine
+# for the synthetic demo data but not for real customer data. Free services sleep after 15 idle
+# minutes and take about a minute to wake. Not a production setup: see docs/operations.md.
+services:
+  - type: web
+    name: narrai-api
+    runtime: docker
+    region: frankfurt
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      # Set in the Render dashboard when the Blueprint is created (never committed):
+      - key: DATABASE_URL # Neon connection string
+        sync: false
+      - key: NARRAI_WEBAPP_SECRET # same value as on Vercel
+        sync: false
+      - key: NARRAI_LLM_API_KEY
+        sync: false
+      - key: NARRAI_TOKEN_SECRET
+        generateValue: true
+      - key: NARRAI_LLM_PROVIDER
+        value: openai_compatible
+      - key: NARRAI_LLM_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: NARRAI_MODEL
+        value: openai/gpt-oss-120b
+      - key: NARRAI_LLM_TIMEOUT
+        value: "30"
+      - key: NARRAI_DEMO_MODE
+        value: "1"
+      - key: NARRAI_SEED_DEMO
+        value: "1"
+      - key: NARRAI_FRONTEND_ORIGINS
+        value: https://narrai-bank.vercel.app
+      - key: NARRAI_HTTPS
+        value: "1"
+      - key: NARRAI_TRUST_PROXY
+        value: "1"

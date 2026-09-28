@@ -112,7 +112,8 @@ def test_actions_are_audited_without_personal_data(repo, bank):
     events = client.get("/api/audit?customer_ref=demo-family", headers=bank).json()["events"]
     actions = [e["action"] for e in events]
     assert {"session.created", "budget.set", "budget.deleted"} <= set(actions)
-    text = json.dumps(events)
+    # Request ids are random hex and may contain "600" by chance, so leave them out of the text check.
+    text = json.dumps([{k: v for k, v in e.items() if k != "request_id"} for e in events])
     assert "Family" not in text and "600" not in text  # no names, no amounts
     assert all(e["request_id"] for e in events)
 

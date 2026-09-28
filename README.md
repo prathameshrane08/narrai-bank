@@ -72,6 +72,21 @@ as stateless functions. The Python API, Postgres and the model run elsewhere (Ve
    `app_url` in its tenant config to that domain, and keep `NARRAI_DEMO_MODE=0` for real customers.
 5. Add the bank's custom domain in Vercel (e.g. `insights.bank.de`) so the session cookie is first-party.
 
+## Hosting the public demo API (free tiers)
+
+For pitches, the API behind the Vercel demo runs on free tiers. [`render.yaml`](render.yaml) describes it:
+
+| Part | Service | Notes |
+|---|---|---|
+| API | Render free web service, Frankfurt | Built from `backend/Dockerfile`. Sleeps after 15 idle minutes; the first request then takes about a minute |
+| Database | Neon free Postgres, Frankfurt | `DATABASE_URL` is the Neon connection string (`postgres://…` URLs are accepted as is) |
+| Model | Groq free plan (`openai/gpt-oss-120b`, an open-weight model) | Through the OpenAI-compatible adapter. Groq runs in the US, which is acceptable only because the demo data is synthetic; banks get the local model or an EU-hosted one. Without a key, NarrAI serves verified template sentences |
+
+In Render: **New → Blueprint**, pick this repository, then fill in `DATABASE_URL`, `NARRAI_WEBAPP_SECRET` (the same
+value as on Vercel) and `NARRAI_LLM_API_KEY`. Point both `…API_URL` variables on Vercel at the Render URL and
+redeploy. Open the demo a minute before a meeting so the API is awake. The demo customers are seeded on every
+start (existing ones are kept).
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request:

@@ -125,7 +125,28 @@ any check), and chat routing from 86.7% to 100%.
 - **Guardrails check claims they know about.** New kinds of claims need new checks; the process
   (evaluate → review → add a targeted check → re-run) is what the table in §4 demonstrates.
 
-## 6. Reproduce
+## 6. Hosted model for the public demo
+
+The public demo API runs on free hosting and uses **gpt-oss-120b** (open-weight) on Groq's free plan instead
+of the local model. Same runs as above, 28 September 2026:
+
+| Metric | Stories | Chat |
+|---|---|---|
+| Unverified numbers shown | **0** of 216 sentences | **0** of 30 answers |
+| AI text accepted by the guardrails | 216 / 216 (54 / 54 stories fully AI-written) | 24 / 24 |
+| Routing accuracy | | 30 / 30 |
+| Advice / off-topic declined | | 6 / 6 |
+| Provider errors | 0 | 0 |
+| Latency p50 | 11.2 s per story (four model calls) | 5.6 s |
+
+The 24 chat answers were read against the sample account: all correct. Wording notes: "a 35.2% difference"
+between July and August still doesn't say it is relative to August, and "on restaurant spending" is clumsy.
+The 216 story sentences were checked by the guardrails only, not reviewed line by line.
+
+Groq processes requests in the US. That is acceptable for the demo's synthetic data only; for a bank, the
+model runs on the bank's own servers or with an EU-hosted provider, and gets its own evaluation.
+
+## 7. Reproduce
 
 ```bash
 cd backend

@@ -19,7 +19,7 @@ USER narrai
 
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=5 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)"
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.getenv(\"PORT\", \"8000\")}/api/health', timeout=4)"
 
 # Migrates the database (and seeds demo data if NARRAI_SEED_DEMO=1) before starting.
 CMD ["./docker-entrypoint.sh"]
