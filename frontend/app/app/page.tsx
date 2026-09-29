@@ -317,7 +317,7 @@ export default function Home() {
           logo={tenant.logo}
           customerName={session.customerName}
           onSignOut={() => endSession(null)}
-          onDownloadData={() => downloadMyData().catch((err) => handleFailure(err, "Your data couldn't be downloaded."))}
+          onDownloadData={(format) => downloadMyData(format).catch((err) => handleFailure(err, "Your data couldn't be downloaded."))}
         />
       }
       footer={

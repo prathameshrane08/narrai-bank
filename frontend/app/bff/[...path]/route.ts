@@ -7,7 +7,7 @@ import { API_URL, checkWriteRequest, readSession } from "../../lib/server/sessio
  * Only the customer-facing endpoints are reachable this way; everything else is refused.
  */
 const ALLOWED: Record<string, RegExp[]> = {
-  GET: [/^months$/, /^dashboard$/, /^story$/, /^budgets$/, /^chat\/suggestions$/, /^me\/export$/],
+  GET: [/^months$/, /^dashboard$/, /^story$/, /^budgets$/, /^chat\/suggestions$/, /^me\/export$/, /^me\/export\/transactions$/],
   POST: [/^chat$/],
   PUT: [/^budgets\/[^/]{1,60}$/],
   DELETE: [/^budgets\/[^/]{1,60}$/],

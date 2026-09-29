@@ -1266,6 +1266,59 @@
         }
       }
     },
+    "/api/me/export/transactions": {
+      "get": {
+        "tags": [
+          "Customer app"
+        ],
+        "summary": "Export My Transactions",
+        "description": "The signed-in customer's transactions as a CSV that opens in Excel or Numbers (the readable\ncompanion to the full JSON export).",
+        "operationId": "export_my_transactions_api_me_export_transactions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-narrai-tenant",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Narrai-Tenant"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/customers/{customer_ref}/export": {
       "get": {
         "tags": [

@@ -307,14 +307,22 @@ export async function demoSignIn(ref: string): Promise<Session> {
   return { tenant: body.tenant, customerName: body.customerName, expiresAt: body.expiresAt };
 }
 
-/** The signed-in customer's own data (GDPR export), saved as a JSON file. */
-export async function downloadMyData(): Promise<void> {
-  const response = await fetch(`${BFF}/me/export`);
+export type DataExportFormat = "csv" | "json";
+
+const EXPORTS: Record<DataExportFormat, { path: string; filename: string }> = {
+  csv: { path: "/me/export/transactions", filename: "my-transactions.csv" }, // opens in a spreadsheet
+  json: { path: "/me/export", filename: "my-data.json" }, // everything, machine-readable (GDPR portability)
+};
+
+/** The signed-in customer's own data (GDPR export), saved as a file. */
+export async function downloadMyData(format: DataExportFormat): Promise<void> {
+  const { path, filename } = EXPORTS[format];
+  const response = await fetch(`${BFF}${path}`);
   if (!response.ok) await parse(response, "Data export");
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement("a");
   link.href = url;
-  link.download = "my-data.json";
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
 }

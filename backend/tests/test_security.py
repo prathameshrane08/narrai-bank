@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 from datetime import date
 from pathlib import Path
@@ -137,6 +139,29 @@ def test_customer_can_download_their_data(repo):
     sample_rows = len((BACKEND / "data" / "transactions.csv").read_text().strip().splitlines()) - 1
     assert len(data["transactions"]) == sample_rows
     assert {"accounts", "budgets", "activity"} <= set(data)
+
+
+def test_customer_can_download_their_transactions_as_csv(repo):
+    response = client.get("/api/me/export/transactions", headers=session_headers(repo))
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert response.headers["content-disposition"] == 'attachment; filename="my-transactions.csv"'
+    assert response.text.startswith("﻿")  # so Excel reads € as UTF-8
+    rows = list(csv.reader(io.StringIO(response.text.lstrip("﻿"))))
+    assert rows[0] == ["Date", "Account", "Merchant", "Category", "Amount (EUR)", "Description"]
+    sample_rows = len((BACKEND / "data" / "transactions.csv").read_text().strip().splitlines()) - 1
+    assert len(rows) - 1 == sample_rows
+    assert any(row[2] == "L'Osteria" and row[4] == "-39.50" for row in rows)  # money out is negative
+
+
+def test_csv_cells_cannot_run_as_spreadsheet_formulas():
+    from main import _cell
+
+    assert _cell('=HYPERLINK("http://evil.example","Click")').startswith("'=")
+    assert _cell("+49 30 1234") == "'+49 30 1234"
+    assert _cell("@SUM(A1)") == "'@SUM(A1)"
+    assert _cell("REWE Markt") == "REWE Markt"
+    assert _cell(None) == ""
 
 
 def test_bank_export_and_erasure(repo, bank):

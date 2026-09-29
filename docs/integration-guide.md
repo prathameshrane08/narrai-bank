@@ -167,6 +167,7 @@ browser  ──same-site calls──► web app server ──Authorization: Bear
 | `POST /api/chat` `{"question", "month", "previous"}` | An answer from verified numbers, its `source` (`ai`, `template`, `policy`) and the `facts` behind it. Investment, credit and loan questions are declined and referred to the bank's advisers |
 | `GET/PUT/DELETE /api/budgets[/{category}]` | Budgets with progress, projection and suggestions |
 | `GET /api/me/export` | The customer's own data as a JSON download |
+| `GET /api/me/export/transactions` | The customer's transactions as a CSV that opens in a spreadsheet |
 | `POST /api/sessions/current/revoke` | Sign out |
 
 **Show the source to customers.** Each story sentence and chat answer says whether the AI wrote it

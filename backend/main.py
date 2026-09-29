@@ -3,7 +3,9 @@
 Transactions -> pandas analytics -> verified facts -> LLM narration -> dashboard.
 """
 
+import csv
 import hmac
+import io
 import json
 import logging
 import os
@@ -666,6 +668,40 @@ def export_my_data(request: Request, signed_in: tuple[Tenant, CustomerRef] = Dep
         content=_json(repo.export_customer(customer)),
         media_type="application/json",
         headers={"Content-Disposition": 'attachment; filename="my-data.json"'},
+    )
+
+
+# Text starting with one of these would run as a formula when the CSV is opened in a spreadsheet.
+FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _cell(text: str | None) -> str:
+    text = text or ""
+    return "'" + text if text.startswith(FORMULA_PREFIXES) else text
+
+
+@app.get("/api/me/export/transactions")
+def export_my_transactions(request: Request, signed_in: tuple[Tenant, CustomerRef] = Depends(signed_in_customer),
+                           repo: Repository = Depends(repository)):
+    """The signed-in customer's transactions as a CSV that opens in Excel or Numbers (the readable
+    companion to the full JSON export)."""
+    tenant, customer = signed_in
+    limiter.check("export", customer.id)
+    audit(request, repo, tenant.id, ("customer", customer.id), "data.exported", customer, format="csv")
+    data = repo.export_customer(customer)
+
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["Date", "Account", "Merchant", "Category", "Amount (EUR)", "Description"])
+    for t in data["transactions"]:
+        amount = t["amount"] if t["direction"] == "in" else f"-{t['amount']}"
+        writer.writerow([t["date"], t["account"], _cell(t["merchant"]), _cell(t["category"]), amount,
+                         _cell(t["description"])])
+    return Response(
+        # The byte-order mark makes Excel read the file as UTF-8, so € and umlauts show correctly.
+        content="\ufeff" + out.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="my-transactions.csv"'},
     )
 
 
