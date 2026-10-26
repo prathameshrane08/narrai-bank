@@ -30,6 +30,8 @@ services:
         value: openai/gpt-oss-120b
       - key: NARRAI_LLM_TIMEOUT
         value: "30"
+      - key: NARRAI_SESSION_MINUTES # long enough for a whole pitch; the default 30 signs people out mid-demo
+        value: "240"
       - key: NARRAI_DEMO_MODE
         value: "1"
       - key: NARRAI_SEED_DEMO
