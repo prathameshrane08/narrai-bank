@@ -12,6 +12,12 @@ export const metadata: Metadata = {
   title: "NarrAI for banks",
   description:
     "Plain-language explanations of a customer's money for banking apps. Numbers are calculated; the AI only puts them into words, and a guardrail checks every sentence.",
+  // Link previews (LinkedIn, Slack, WhatsApp). On Vercel the relative URL resolves against the production domain.
+  openGraph: {
+    title: "NarrAI: verified financial storytelling",
+    description: "Code calculates every number, an LLM narrates, and a guardrail checks every sentence.",
+    images: [{ url: "/og-image.jpg", width: 1200, height: 628, alt: "NarrAI account overview with a verified AI story" }],
+  },
 };
 
 const CONTACT = process.env.NEXT_PUBLIC_CONTACT_EMAIL;
